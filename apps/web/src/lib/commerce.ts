@@ -23,6 +23,7 @@ const providers: Record<PaymentProviderType, PaymentProvider> = {
     clientId: process.env.PAYPAL_CLIENT_ID ?? "",
     clientSecret: process.env.PAYPAL_CLIENT_SECRET ?? "",
     webhookId: process.env.PAYPAL_WEBHOOK_ID ?? "",
+    apiBaseUrl: process.env.PAYPAL_API_BASE_URL ?? "https://api-m.sandbox.paypal.com",
   }),
 };
 

@@ -22,7 +22,7 @@ function makeDeps(): ProcessProviderWebhookDeps {
         integritySecret: "test_integrity_secret_local",
         eventSecret: TEST_WOMPI_EVENT_SECRET,
       }),
-      PAYPAL: new PayPalPaymentProvider({ clientId: "", clientSecret: "", webhookId: "" }),
+      PAYPAL: new PayPalPaymentProvider({ clientId: "", clientSecret: "", webhookId: "", apiBaseUrl: "https://api-m.sandbox.paypal.com" }),
     },
     webhookEvents: new PrismaWebhookEventRepository(),
     orders: new PrismaOrderRepository(),
