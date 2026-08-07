@@ -6,7 +6,12 @@ import { prisma } from "../src/infrastructure/prisma/client";
  * datos (nunca mocks) para que cada test de webhook tenga un checkout válido
  * y aislado sobre el que operar.
  */
-export async function createFixtureOffer() {
+export async function createFixtureOffer(overrides?: {
+  checkoutSessionId?: string;
+  provider?: "WOMPI" | "PAYPAL";
+  amount?: number;
+  currency?: string;
+}) {
   const product = await prisma.product.create({
     data: { name: `Test Product ${randomUUID()}`, type: "DIGITAL", status: "PUBLISHED" },
   });
@@ -16,7 +21,7 @@ export async function createFixtureOffer() {
       productId: product.id,
       name: "Test Offer",
       isActive: true,
-      prices: { create: { amount: 5_000_000, currency: "COP", interval: "ONE_TIME" } },
+      prices: { create: { amount: overrides?.amount ?? 5_000_000, currency: overrides?.currency ?? "COP", interval: "ONE_TIME" } },
     },
     include: { prices: true },
   });
@@ -32,10 +37,11 @@ export async function createFixtureOffer() {
 
   const checkoutSession = await prisma.checkoutSession.create({
     data: {
+      ...(overrides?.checkoutSessionId ? { id: overrides.checkoutSessionId } : {}),
       offerId: offer.id,
       priceId: price.id,
       customerId: customer.id,
-      provider: "WOMPI",
+      provider: overrides?.provider ?? "WOMPI",
     },
   });
 
