@@ -1,8 +1,4 @@
 {
   "extends": "@repo/config/tsconfig/base",
-  "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src"
-  },
-  "include": ["src"]
+  "include": ["src", "test", "vitest.config.ts"]
 }

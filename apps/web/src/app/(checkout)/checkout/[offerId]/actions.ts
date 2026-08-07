@@ -8,6 +8,8 @@ export interface StartCheckoutFormResult {
   ok: boolean;
   error?: string;
   checkoutSessionId?: string;
+  provider?: PaymentProviderType;
+  clientPayload?: Record<string, unknown>;
 }
 
 export async function startCheckoutAction(input: {
@@ -23,12 +25,17 @@ export async function startCheckoutAction(input: {
       guestEmail: input.guestEmail,
     });
 
-    await prepareCheckoutPayment(commerce, {
+    const prepared = await prepareCheckoutPayment(commerce, {
       checkoutSessionId: session.id,
       provider: input.provider,
     });
 
-    return { ok: true, checkoutSessionId: session.id };
+    return {
+      ok: true,
+      checkoutSessionId: session.id,
+      provider: prepared.provider,
+      clientPayload: prepared.clientPayload,
+    };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Error inesperado" };
   }

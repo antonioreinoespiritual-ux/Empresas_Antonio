@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { startCheckoutAction } from "./actions";
+import { openWompiWidget } from "@/lib/wompi-widget";
 
 const schema = z.object({
   guestEmail: z.string().email(),
@@ -35,10 +36,30 @@ export function CheckoutForm({ offerId, prices }: { offerId: string; prices: Pri
   async function onSubmit(values: FormValues) {
     setServerError(null);
     const result = await startCheckoutAction({ offerId, ...values });
-    if (!result.ok) {
+    if (!result.ok || !result.checkoutSessionId) {
       setServerError(result.error ?? "No se pudo iniciar el checkout");
       return;
     }
+
+    if (result.provider === "WOMPI" && result.clientPayload) {
+      try {
+        await openWompiWidget({
+          publicKey: String(result.clientPayload.publicKey),
+          currency: String(result.clientPayload.currency),
+          amountInCents: Number(result.clientPayload.amountInCents),
+          reference: String(result.clientPayload.reference),
+          signature: String(result.clientPayload.signature),
+        });
+      } catch (error) {
+        setServerError(error instanceof Error ? error.message : "No se pudo abrir el widget de pago");
+        return;
+      }
+      // El resultado del widget es solo informativo (ADR-011) — la página de
+      // gracias consulta el estado real, que llega por webhook.
+      window.location.href = `/gracias/${result.checkoutSessionId}`;
+      return;
+    }
+
     window.location.href = `/gracias/${result.checkoutSessionId}`;
   }
 
