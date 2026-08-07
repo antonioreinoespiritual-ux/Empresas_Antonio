@@ -15,6 +15,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <nav className="flex flex-col gap-2 text-sm">
           <a href="/orders">Pedidos</a>
           <a href="/products">Productos</a>
+          <a href="/offers">Ofertas</a>
           <a href="/users">Usuarios</a>
         </nav>
       </aside>

@@ -6,6 +6,8 @@ export * from "./prisma/repositories/order.repository";
 export * from "./prisma/repositories/payment.repository";
 export * from "./prisma/repositories/entitlement.repository";
 export * from "./prisma/repositories/webhook-event.repository";
+export * from "./prisma/repositories/product.repository";
+export * from "./prisma/repositories/page.repository";
 
 export * from "./payments/wompi/wompi-payment-provider";
 export * from "./payments/paypal/paypal-payment-provider";

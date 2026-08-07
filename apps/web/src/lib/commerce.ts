@@ -6,6 +6,7 @@ import {
   PrismaPaymentRepository,
   PrismaEntitlementRepository,
   PrismaWebhookEventRepository,
+  PrismaPageRepository,
   WompiPaymentProvider,
   PayPalPaymentProvider,
 } from "@repo/core/infrastructure";
@@ -35,5 +36,6 @@ export const commerce = {
   payments: new PrismaPaymentRepository(),
   entitlements: new PrismaEntitlementRepository(),
   webhookEvents: new PrismaWebhookEventRepository(),
+  pages: new PrismaPageRepository(),
   providers,
 };

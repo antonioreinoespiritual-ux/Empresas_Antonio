@@ -8,4 +8,6 @@ export * from "./commerce/offer.entity";
 export * from "./commerce/checkout-session.entity";
 export * from "./commerce/order.entity";
 export * from "./commerce/entitlement.entity";
+export * from "./content/page.entity";
+export * from "./content/page-content";
 export * from "./shared/domain-error";

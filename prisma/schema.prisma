@@ -194,11 +194,17 @@ enum ProductType {
   SUBSCRIPTION
 }
 
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 model Product {
-  id     String      @id @default(cuid())
+  id     String        @id @default(cuid())
   name   String
   type   ProductType
-  status String      @default("ACTIVE")
+  status ProductStatus @default(DRAFT)
 
   offers       Offer[]
   entitlements Entitlement[]
@@ -230,6 +236,7 @@ model Offer {
   prices           Price[]
   checkoutSessions CheckoutSession[]
   orderItems       OrderItem[]
+  pages            Page[]
 
   @@map("offers")
 }
@@ -432,4 +439,38 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Contenido editable desde el admin (landing / checkout / thank-you) — sin
+// tocar código ni desplegar. "content" es JSON validado en application/domain
+// contra un schema Zod específico por "kind" (evita migraciones por cada
+// campo de copy, sin perder el resto del modelo relacional fuerte).
+// ---------------------------------------------------------------------------
+
+enum PageKind {
+  LANDING
+  CHECKOUT
+  THANK_YOU
+}
+
+enum PageStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model Page {
+  id        String     @id @default(cuid())
+  offerId   String
+  kind      PageKind
+  slug      String?    @unique
+  status    PageStatus @default(DRAFT)
+  content   Json
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  offer Offer @relation(fields: [offerId], references: [id])
+
+  @@unique([offerId, kind])
+  @@map("pages")
 }
