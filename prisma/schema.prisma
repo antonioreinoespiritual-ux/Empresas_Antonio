@@ -246,8 +246,9 @@ model Price {
   currency String
   interval PriceInterval
 
-  offer      Offer       @relation(fields: [offerId], references: [id])
-  orderItems OrderItem[]
+  offer            Offer             @relation(fields: [offerId], references: [id])
+  orderItems       OrderItem[]
+  checkoutSessions CheckoutSession[]
 
   @@map("prices")
 }
@@ -289,12 +290,14 @@ enum CheckoutSessionStatus {
 model CheckoutSession {
   id         String                 @id @default(cuid())
   offerId    String
+  priceId    String
   customerId String
   provider   PaymentProviderType?
   status     CheckoutSessionStatus  @default(STARTED)
   createdAt  DateTime               @default(now())
 
   offer    Offer     @relation(fields: [offerId], references: [id])
+  price    Price     @relation(fields: [priceId], references: [id])
   customer Customer  @relation(fields: [customerId], references: [id])
   order    Order?
 

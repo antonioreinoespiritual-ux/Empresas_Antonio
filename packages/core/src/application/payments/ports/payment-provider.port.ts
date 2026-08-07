@@ -15,7 +15,11 @@ export interface NormalizedWebhookEvent {
   provider: PaymentProviderType;
   providerEventId: string;
   providerReference: string;
+  /** Nuestra propia referencia (reference/metadata que fijamos al preparar el pago), nunca inferida. */
+  checkoutSessionId: string;
   rawStatus: string;
+  amount: number;
+  currency: string;
 }
 
 export interface PaymentProvider {

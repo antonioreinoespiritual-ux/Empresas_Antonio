@@ -1,0 +1,89 @@
+"use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { startCheckoutAction } from "./actions";
+
+const schema = z.object({
+  guestEmail: z.string().email(),
+  priceId: z.string().min(1),
+  provider: z.enum(["WOMPI", "PAYPAL"]),
+});
+
+type FormValues = z.infer<typeof schema>;
+
+interface PriceOption {
+  id: string;
+  amount: number;
+  currency: string;
+  interval: string;
+}
+
+export function CheckoutForm({ offerId, prices }: { offerId: string; prices: PriceOption[] }) {
+  const [serverError, setServerError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { priceId: prices[0]?.id, provider: "WOMPI" },
+  });
+
+  async function onSubmit(values: FormValues) {
+    setServerError(null);
+    const result = await startCheckoutAction({ offerId, ...values });
+    if (!result.ok) {
+      setServerError(result.error ?? "No se pudo iniciar el checkout");
+      return;
+    }
+    window.location.href = `/gracias/${result.checkoutSessionId}`;
+  }
+
+  return (
+    <form className="mt-6 flex flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
+      <div>
+        <label className="block text-sm font-medium">Email</label>
+        <input className="mt-1 w-full rounded border px-3 py-2" type="email" {...register("guestEmail")} />
+        {errors.guestEmail && <p className="mt-1 text-sm text-red-600">{errors.guestEmail.message}</p>}
+      </div>
+
+      {prices.length > 1 && (
+        <fieldset>
+          <legend className="text-sm font-medium">Precio</legend>
+          {prices.map((price) => (
+            <label key={price.id} className="mt-1 flex items-center gap-2 text-sm">
+              <input type="radio" value={price.id} {...register("priceId")} />
+              {(price.amount / 100).toLocaleString("es-CO", { style: "currency", currency: price.currency })} (
+              {price.interval})
+            </label>
+          ))}
+        </fieldset>
+      )}
+
+      <fieldset>
+        <legend className="text-sm font-medium">Método de pago</legend>
+        <label className="mt-1 flex items-center gap-2 text-sm">
+          <input type="radio" value="WOMPI" {...register("provider")} />
+          Pagar con tarjeta mediante Wompi
+        </label>
+        <label className="mt-1 flex items-center gap-2 text-sm">
+          <input type="radio" value="PAYPAL" {...register("provider")} />
+          Pagar con tarjeta mediante PayPal
+        </label>
+      </fieldset>
+
+      {serverError && <p className="text-sm text-red-600">{serverError}</p>}
+
+      <button
+        className="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
+        type="submit"
+        disabled={isSubmitting}
+      >
+        Continuar
+      </button>
+    </form>
+  );
+}

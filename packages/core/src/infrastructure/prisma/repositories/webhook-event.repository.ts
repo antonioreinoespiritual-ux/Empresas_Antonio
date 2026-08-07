@@ -1,8 +1,7 @@
 import type { WebhookEventRepository } from "../../../application";
 import type { PaymentProviderType } from "../../../domain";
 import { prisma } from "../client";
-
-const PRISMA_UNIQUE_CONSTRAINT_VIOLATION = "P2002";
+import { isUniqueConstraintViolation } from "../is-unique-constraint-violation";
 
 export class PrismaWebhookEventRepository implements WebhookEventRepository {
   async registerIfNew(provider: PaymentProviderType, providerEventId: string): Promise<boolean> {
@@ -21,13 +20,4 @@ export class PrismaWebhookEventRepository implements WebhookEventRepository {
       data: { processedAt: new Date() },
     });
   }
-}
-
-function isUniqueConstraintViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code: unknown }).code === PRISMA_UNIQUE_CONSTRAINT_VIOLATION
-  );
 }

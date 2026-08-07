@@ -3,9 +3,9 @@ import type { PaymentProviderType } from "../../../domain";
 import { prisma } from "../client";
 
 export class PrismaCheckoutSessionRepository implements CheckoutSessionRepository {
-  async create(input: { offerId: string; customerId: string }) {
+  async create(input: { offerId: string; priceId: string; customerId: string }) {
     return prisma.checkoutSession.create({
-      data: { offerId: input.offerId, customerId: input.customerId },
+      data: { offerId: input.offerId, priceId: input.priceId, customerId: input.customerId },
     });
   }
 
