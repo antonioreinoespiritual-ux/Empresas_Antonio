@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
 
-// Fase 1: verificar sesión de User (cookie user_auth) antes de servir /account/*.
-export function middleware(_request: NextRequest) {
+// Chequeo optimista compatible con el runtime Edge (sin acceso a Prisma).
+// La verificación autoritativa de sesión ocurre en (account)/layout.tsx (Node runtime).
+export function middleware(request: NextRequest) {
+  const sessionCookie = getSessionCookie(request, { cookiePrefix: "user_auth" });
+  if (!sessionCookie) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
   return NextResponse.next();
 }
 
