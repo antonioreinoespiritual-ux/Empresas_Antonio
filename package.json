@@ -15,6 +15,7 @@
     "boundaries": "cd packages/core && depcruise src --config .dependency-cruiser.cjs",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "prisma:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "seed:admin": "node --env-file=.env packages/core/scripts/seed-admin.mjs"
   },
   "devDependencies": {

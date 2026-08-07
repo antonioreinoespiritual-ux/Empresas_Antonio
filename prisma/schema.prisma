@@ -3,8 +3,14 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Supabase (y cualquier Postgres serverless-friendly) recomienda apuntar
+  // DATABASE_URL al pooler de transacciones (pgbouncer) para runtime, y
+  // directUrl a la conexión directa para `prisma migrate` — el pooler no
+  // soporta los advisory locks que usan las migraciones. Si no usás pooler
+  // (Postgres local, un solo proceso), ambas pueden apuntar al mismo valor.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------
