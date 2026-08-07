@@ -1,0 +1,432 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth de USUARIOS finales (instancia Better Auth "user" — ADR-009)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions    UserSession[]
+  accounts    UserAccount[]
+  roles       UserRole[]
+  customer    Customer?
+
+  @@map("users")
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model UserAccount {
+  id                    String    @id @default(cuid())
+  userId                String
+  providerId            String
+  accountId             String
+  passwordHash          String?
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("user_accounts")
+}
+
+model UserVerification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@map("user_verifications")
+}
+
+// ---------------------------------------------------------------------------
+// Auth de ADMINISTRADORES (instancia Better Auth "admin" — completamente
+// separada de User: tablas, cookies y secreto propios. ADR-004/ADR-009)
+// ---------------------------------------------------------------------------
+
+model AdminUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions AdminSession[]
+  accounts AdminAccount[]
+  roles    AdminRole[]
+
+  @@map("admin_users")
+}
+
+model AdminSession {
+  id        String   @id @default(cuid())
+  adminId   String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@map("admin_sessions")
+}
+
+model AdminAccount {
+  id           String   @id @default(cuid())
+  adminId      String
+  providerId   String
+  accountId    String
+  passwordHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("admin_accounts")
+}
+
+model AdminVerification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@map("admin_verifications")
+}
+
+// ---------------------------------------------------------------------------
+// Autorización (roles/permisos separados por dominio de identidad)
+// ---------------------------------------------------------------------------
+
+model Role {
+  id          String @id @default(cuid())
+  name        String @unique
+  permissions RolePermission[]
+  userRoles   UserRole[]
+  adminRoles  AdminRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id    String @id @default(cuid())
+  name  String @unique
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model AdminRole {
+  adminId String
+  roleId  String
+
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  role  Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([adminId, roleId])
+  @@map("admin_roles")
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo / comercial (Product != Offer != Price — ADR dominio comercial)
+// ---------------------------------------------------------------------------
+
+enum ProductType {
+  DIGITAL
+  PHYSICAL
+  SERVICE
+  SUBSCRIPTION
+}
+
+model Product {
+  id     String      @id @default(cuid())
+  name   String
+  type   ProductType
+  status String      @default("ACTIVE")
+
+  offers       Offer[]
+  entitlements Entitlement[]
+
+  @@map("products")
+}
+
+model Campaign {
+  id     String @id @default(cuid())
+  name   String
+  source String?
+
+  offers Offer[]
+
+  @@map("campaigns")
+}
+
+model Offer {
+  id         String    @id @default(cuid())
+  productId  String
+  campaignId String?
+  name       String
+  isActive   Boolean   @default(true)
+  validFrom  DateTime?
+  validTo    DateTime?
+
+  product          Product           @relation(fields: [productId], references: [id])
+  campaign         Campaign?         @relation(fields: [campaignId], references: [id])
+  prices           Price[]
+  checkoutSessions CheckoutSession[]
+  orderItems       OrderItem[]
+
+  @@map("offers")
+}
+
+enum PriceInterval {
+  ONE_TIME
+  RECURRING
+}
+
+model Price {
+  id       String        @id @default(cuid())
+  offerId  String
+  amount   Int
+  currency String
+  interval PriceInterval
+
+  offer      Offer       @relation(fields: [offerId], references: [id])
+  orderItems OrderItem[]
+
+  @@map("prices")
+}
+
+// ---------------------------------------------------------------------------
+// Identidad comercial: Customer != User (ADR-012)
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  userId    String?  @unique
+  createdAt DateTime @default(now())
+
+  user             User?             @relation(fields: [userId], references: [id])
+  checkoutSessions CheckoutSession[]
+  orders           Order[]
+  entitlements     Entitlement[]
+
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Transaccional
+// ---------------------------------------------------------------------------
+
+enum PaymentProviderType {
+  WOMPI
+  PAYPAL
+}
+
+enum CheckoutSessionStatus {
+  STARTED
+  COMPLETED
+  ABANDONED
+}
+
+model CheckoutSession {
+  id         String                 @id @default(cuid())
+  offerId    String
+  customerId String
+  provider   PaymentProviderType?
+  status     CheckoutSessionStatus  @default(STARTED)
+  createdAt  DateTime               @default(now())
+
+  offer    Offer     @relation(fields: [offerId], references: [id])
+  customer Customer  @relation(fields: [customerId], references: [id])
+  order    Order?
+
+  @@map("checkout_sessions")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+model Order {
+  id                String      @id @default(cuid())
+  checkoutSessionId String      @unique
+  customerId        String
+  status            OrderStatus @default(PENDING)
+  createdAt         DateTime    @default(now())
+
+  checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id])
+  customer        Customer        @relation(fields: [customerId], references: [id])
+  items           OrderItem[]
+  payments        Payment[]
+  entitlements    Entitlement[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id                String @id @default(cuid())
+  orderId           String
+  offerId           String
+  priceId           String
+  amountSnapshot    Int
+  currencySnapshot  String
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  offer Offer @relation(fields: [offerId], references: [id])
+  price Price @relation(fields: [priceId], references: [id])
+
+  @@map("order_items")
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+model Payment {
+  id                String              @id @default(cuid())
+  orderId           String
+  provider          PaymentProviderType
+  providerReference String
+  status            PaymentStatus       @default(PENDING)
+  amount            Int
+  currency          String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  order   Order    @relation(fields: [orderId], references: [id])
+  refunds Refund[]
+
+  @@unique([provider, providerReference])
+  @@map("payments")
+}
+
+model Refund {
+  id        String   @id @default(cuid())
+  paymentId String
+  amount    Int
+  reason    String?
+  createdAt DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@map("refunds")
+}
+
+enum EntitlementStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+model Entitlement {
+  id            String            @id @default(cuid())
+  customerId    String
+  productId     String
+  sourceOrderId String
+  status        EntitlementStatus @default(ACTIVE)
+  expiresAt     DateTime?
+
+  customer    Customer @relation(fields: [customerId], references: [id])
+  product     Product  @relation(fields: [productId], references: [id])
+  sourceOrder Order    @relation(fields: [sourceOrderId], references: [id])
+
+  @@unique([sourceOrderId, productId])
+  @@map("entitlements")
+}
+
+// ---------------------------------------------------------------------------
+// Integridad de procesamiento de webhooks (ADR-014)
+// ---------------------------------------------------------------------------
+
+model WebhookEvent {
+  id              String              @id @default(cuid())
+  provider        PaymentProviderType
+  providerEventId String
+  processedAt     DateTime?
+  createdAt       DateTime            @default(now())
+
+  @@unique([provider, providerEventId])
+  @@map("webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// Auditoría
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorType String
+  actorId   String
+  action    String
+  entity    String
+  entityId  String
+  diff      Json?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
