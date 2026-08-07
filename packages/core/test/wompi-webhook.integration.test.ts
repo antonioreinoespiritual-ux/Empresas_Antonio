@@ -68,7 +68,7 @@ describe("Wompi: webhook -> Payment -> Order -> Entitlement (Postgres real)", ()
     expect(entitlement?.customerId).toBe(fixture.customer.id);
   });
 
-  it("pago DECLINED: registra Payment DECLINED, Order sigue PENDING, sin Entitlement", async () => {
+  it("pago DECLINED: registra Payment DECLINED, cancela el Order, sin Entitlement", async () => {
     const fixture = await createFixtureOffer();
     const transactionId = `wompi-${randomUUID()}`;
     const rawBody = buildSignedWompiWebhook({
@@ -83,7 +83,7 @@ describe("Wompi: webhook -> Payment -> Order -> Entitlement (Postgres real)", ()
     expect(result.outcome).toBe("processed");
 
     const order = await prisma.order.findUnique({ where: { checkoutSessionId: fixture.checkoutSession.id } });
-    expect(order?.status).toBe("PENDING");
+    expect(order?.status).toBe("CANCELLED");
 
     const payment = await prisma.payment.findUnique({
       where: { provider_providerReference: { provider: "WOMPI", providerReference: transactionId } },

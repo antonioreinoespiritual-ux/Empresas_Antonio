@@ -44,6 +44,17 @@ describe("prepareCheckoutPayment: compatibilidad de proveedor por moneda (sin co
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("rechaza PayPal para una moneda de 0 decimales (JPY) sin llamar a ningún proveedor externo", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const fixture = await createFixtureOffer({ currency: "JPY", amount: 1000 });
+
+    await expect(
+      prepareCheckoutPayment(makeDeps(), { checkoutSessionId: fixture.checkoutSession.id, provider: "PAYPAL" })
+    ).rejects.toThrow(/no admite pagos en JPY/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("permite Wompi para un Price en COP", async () => {
     const fixture = await createFixtureOffer({ currency: "COP" });
 

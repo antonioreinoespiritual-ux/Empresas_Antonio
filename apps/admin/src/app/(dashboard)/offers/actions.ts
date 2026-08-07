@@ -3,24 +3,29 @@
 import { revalidatePath } from "next/cache";
 import type { CreateOfferInput, CreatePriceInput, UpdateOfferInput } from "@repo/core/application";
 import { commerce } from "@/lib/commerce";
+import { requireAdminSession } from "@/lib/require-admin-session";
 
 export async function createOfferAction(input: CreateOfferInput) {
+  await requireAdminSession();
   await commerce.offers.create(input);
   revalidatePath("/offers");
 }
 
 export async function updateOfferAction(offerId: string, input: UpdateOfferInput) {
+  await requireAdminSession();
   await commerce.offers.update(offerId, input);
   revalidatePath("/offers");
   revalidatePath(`/offers/${offerId}/edit`);
 }
 
 export async function setOfferActiveAction(offerId: string, isActive: boolean) {
+  await requireAdminSession();
   await commerce.offers.setActive(offerId, isActive);
   revalidatePath("/offers");
 }
 
 export async function addPriceAction(offerId: string, price: CreatePriceInput) {
+  await requireAdminSession();
   await commerce.offers.addPrice(offerId, price);
   revalidatePath(`/offers/${offerId}/edit`);
 }
@@ -29,6 +34,7 @@ export async function removePriceAction(
   offerId: string,
   priceId: string
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireAdminSession();
   try {
     await commerce.offers.removePrice(priceId);
     revalidatePath(`/offers/${offerId}/edit`);

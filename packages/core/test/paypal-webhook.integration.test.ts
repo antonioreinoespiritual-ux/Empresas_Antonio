@@ -90,7 +90,7 @@ describe("PayPal (nivel 1 — mocks de red, Postgres real): webhook -> Payment -
     expect(entitlements[0]?.productId).toBe(fixture.product.id);
   });
 
-  it("PAYMENT.CAPTURE.DENIED: registra Payment DECLINED, Order sigue PENDING, sin Entitlement", async () => {
+  it("PAYMENT.CAPTURE.DENIED: registra Payment DECLINED, cancela el Order, sin Entitlement", async () => {
     vi.stubGlobal("fetch", mockPayPalFetch("SUCCESS"));
     const fixture = await createFixtureOffer();
     const captureId = `paypal-${randomUUID()}`;
@@ -111,7 +111,7 @@ describe("PayPal (nivel 1 — mocks de red, Postgres real): webhook -> Payment -
     expect(result.outcome).toBe("processed");
 
     const order = await prisma.order.findUnique({ where: { checkoutSessionId: fixture.checkoutSession.id } });
-    expect(order?.status).toBe("PENDING");
+    expect(order?.status).toBe("CANCELLED");
 
     const payment = await prisma.payment.findUnique({
       where: { provider_providerReference: { provider: "PAYPAL", providerReference: captureId } },

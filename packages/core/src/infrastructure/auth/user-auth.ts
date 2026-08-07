@@ -10,7 +10,9 @@ export const userAuth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   user: { modelName: "User" },
   session: { modelName: "UserSession" },
-  account: { modelName: "UserAccount" },
+  // password mapea el nombre interno de Better Auth a nuestra columna
+  // passwordHash — sin esto, Prisma rechaza la escritura de la credencial.
+  account: { modelName: "UserAccount", fields: { password: "passwordHash" } },
   verification: { modelName: "UserVerification" },
   advanced: { cookiePrefix: "user_auth" },
   secret: process.env.USER_AUTH_SECRET,

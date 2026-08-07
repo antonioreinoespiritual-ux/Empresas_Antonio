@@ -30,6 +30,8 @@ export interface OrderRepository {
   /** Idempotente: si ya existe un Order para el CheckoutSession, lo devuelve sin duplicar. */
   createFromCheckoutSession(checkoutSessionId: string): Promise<Order>;
   markAsPaid(orderId: string): Promise<void>;
+  /** No-op si el Order ya no está PENDING (nunca regresa un Order ya PAID). */
+  markAsCancelled(orderId: string): Promise<void>;
   list(): Promise<OrderListItem[]>;
   findDetailById(orderId: string): Promise<OrderDetail | null>;
 }

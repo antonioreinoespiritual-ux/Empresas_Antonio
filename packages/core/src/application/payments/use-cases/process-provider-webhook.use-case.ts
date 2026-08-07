@@ -42,10 +42,15 @@ export async function processProviderWebhook(
     return { outcome: "invalid_signature" };
   }
 
-  const isNew = await deps.webhookEvents.registerIfNew(event.provider, event.providerEventId);
-  if (!isNew) {
+  const registration = await deps.webhookEvents.registerIfNew(event.provider, event.providerEventId);
+  if (registration === "already_processed") {
     return { outcome: "duplicate" };
   }
+  // "retry": un intento anterior registró el evento pero murió antes de
+  // terminar de escribir Order/Payment/Entitlement. El resto del camino es
+  // idempotente (upserts y recuperación por UNIQUE), así que reprocesar es
+  // seguro y necesario — de lo contrario el pago quedaría cobrado sin Order
+  // ni Entitlement, indistinguible de un duplicado real.
 
   const order = await deps.orders.createFromCheckoutSession(event.checkoutSessionId);
   const status = provider.normalizeStatus(event.rawStatus);
@@ -65,6 +70,14 @@ export async function processProviderWebhook(
     // como nuevos eventos de webhook — la revocación de Entitlements ante esos
     // casos queda fuera de este alcance (Fase 2).
     await deps.entitlements.grantForOrder(order.id);
+  } else if (status === "DECLINED" || status === "FAILED") {
+    // Sin esto, un pago definitivamente rechazado deja el Order en PENDING
+    // para siempre: la página de gracias solo deja de sondear cuando el
+    // status deja de ser PENDING, así que el comprador vería "Procesando tu
+    // pago…" indefinidamente. markAsCancelled es un no-op si el Order ya
+    // está PAID (p. ej. un DECLINED tardío de un intento anterior a un
+    // reintento exitoso), así que nunca regresa un pago ya aprobado.
+    await deps.orders.markAsCancelled(order.id);
   }
 
   await deps.webhookEvents.markProcessed(event.provider, event.providerEventId);

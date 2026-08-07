@@ -46,6 +46,12 @@ export class PrismaOrderRepository implements OrderRepository {
     await prisma.order.update({ where: { id: orderId }, data: { status: "PAID" } });
   }
 
+  async markAsCancelled(orderId: string): Promise<void> {
+    // Guard por status: un DECLINED tardío o fuera de orden nunca debe
+    // regresar un Order que ya fue pagado por un intento posterior.
+    await prisma.order.updateMany({ where: { id: orderId, status: "PENDING" }, data: { status: "CANCELLED" } });
+  }
+
   async list(): Promise<OrderListItem[]> {
     const orders = await prisma.order.findMany({
       include: {
