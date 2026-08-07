@@ -1,4 +1,4 @@
-import type { OrderRepository } from "../../../application";
+import type { OrderDetail, OrderListItem, OrderRepository } from "../../../application";
 import type { Order } from "../../../domain";
 import { prisma } from "../client";
 import { isUniqueConstraintViolation } from "../is-unique-constraint-violation";
@@ -44,5 +44,67 @@ export class PrismaOrderRepository implements OrderRepository {
 
   async markAsPaid(orderId: string): Promise<void> {
     await prisma.order.update({ where: { id: orderId }, data: { status: "PAID" } });
+  }
+
+  async list(): Promise<OrderListItem[]> {
+    const orders = await prisma.order.findMany({
+      include: {
+        customer: { select: { email: true } },
+        items: { include: { offer: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return orders.map((order) => ({
+      id: order.id,
+      customerEmail: order.customer.email,
+      offerName: order.items[0]?.offer.name ?? "—",
+      status: order.status,
+      totalAmount: order.items.reduce((sum, item) => sum + item.amountSnapshot, 0),
+      currency: order.items[0]?.currencySnapshot ?? "COP",
+      createdAt: order.createdAt,
+    }));
+  }
+
+  async findDetailById(orderId: string): Promise<OrderDetail | null> {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: { select: { email: true } },
+        items: { include: { offer: { select: { name: true } } } },
+        payments: true,
+        entitlements: { include: { product: { select: { name: true } } } },
+      },
+    });
+    if (!order) return null;
+
+    return {
+      id: order.id,
+      checkoutSessionId: order.checkoutSessionId,
+      customerId: order.customerId,
+      status: order.status,
+      createdAt: order.createdAt,
+      customerEmail: order.customer.email,
+      items: order.items.map((item) => ({
+        id: item.id,
+        offerName: item.offer.name,
+        amountSnapshot: item.amountSnapshot,
+        currencySnapshot: item.currencySnapshot,
+      })),
+      payments: order.payments.map((payment) => ({
+        id: payment.id,
+        provider: payment.provider,
+        providerReference: payment.providerReference,
+        status: payment.status,
+        amount: payment.amount,
+        currency: payment.currency,
+        createdAt: payment.createdAt,
+      })),
+      entitlements: order.entitlements.map((entitlement) => ({
+        id: entitlement.id,
+        productName: entitlement.product.name,
+        status: entitlement.status,
+      })),
+    };
   }
 }
