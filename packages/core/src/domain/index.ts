@@ -1,5 +1,6 @@
 export * from "./payments/payment-provider-type";
 export * from "./payments/payment-status";
+export * from "./payments/provider-currency-compatibility";
 export * from "./payments/payment.entity";
 export * from "./commerce/customer.entity";
 export * from "./commerce/product.entity";

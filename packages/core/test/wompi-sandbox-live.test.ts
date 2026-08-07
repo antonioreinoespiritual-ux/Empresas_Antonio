@@ -148,7 +148,13 @@ describe.skipIf(!shouldRun)("Wompi SANDBOX REAL: transacción real -> Payment ->
     const deps: ProcessProviderWebhookDeps = {
       providers: {
         WOMPI: new WompiPaymentProvider({ publicKey, integritySecret, eventSecret }),
-        PAYPAL: new PayPalPaymentProvider({ clientId: "", clientSecret: "", webhookId: "", apiBaseUrl: "https://api-m.sandbox.paypal.com" }),
+        PAYPAL: new PayPalPaymentProvider({
+          clientId: "",
+          clientSecret: "",
+          webhookId: "",
+          apiBaseUrl: "https://api-m.sandbox.paypal.com",
+          webBaseUrl: "https://example.com",
+        }),
       },
       webhookEvents: new PrismaWebhookEventRepository(),
       orders: new PrismaOrderRepository(),

@@ -12,6 +12,8 @@ export interface PayPalConfig {
   webhookId: string;
   /** https://api-m.sandbox.paypal.com en sandbox, https://api-m.paypal.com en producción. */
   apiBaseUrl: string;
+  /** Origen público de apps/web (sin slash final) para construir return_url/cancel_url. */
+  webBaseUrl: string;
 }
 
 // Confirmado contra developer.paypal.com (2026-08): a diferencia de Wompi,
@@ -93,6 +95,14 @@ export class PayPalPaymentProvider implements PaymentProvider {
     // 2 decimales — no generaliza a monedas de 0 decimales (p. ej. JPY).
     const value = (input.amount / 100).toFixed(2);
 
+    // Esta cuenta sandbox (y cualquier merchant colombiano) no está habilitada
+    // para Advanced Credit and Debit Card Payments — confirmado tanto contra
+    // la API real (PAYEE_NOT_ENABLED_FOR_CARD_PROCESSING) como contra la
+    // documentación oficial de PayPal (país no elegible para ACDC). La única
+    // vía real de cobro es el checkout estándar con redirección: el comprador
+    // aprueba en una página hospedada por PayPal y vuelve a nuestro dominio.
+    const returnUrl = `${this.config.webBaseUrl}/api/paypal/return?checkoutSessionId=${encodeURIComponent(input.checkoutSessionId)}`;
+
     const response = await fetch(`${this.config.apiBaseUrl}/v2/checkout/orders`, {
       method: "POST",
       headers: {
@@ -111,19 +121,34 @@ export class PayPalPaymentProvider implements PaymentProvider {
             amount: { currency_code: input.currency, value },
           },
         ],
+        application_context: {
+          return_url: returnUrl,
+          cancel_url: returnUrl,
+          user_action: "PAY_NOW",
+          shipping_preference: "NO_SHIPPING",
+        },
       }),
     });
 
-    const order = (await response.json()) as { id: string; status: string };
+    const order = (await response.json()) as {
+      id: string;
+      status: string;
+      links: Array<{ rel: string; href: string }>;
+    };
     if (!response.ok) {
       throw new Error(
         `PayPalPaymentProvider.preparePayment: fallo al crear la Order (${response.status}): ${JSON.stringify(order)}`
       );
     }
 
+    const approveLink = order.links.find((link) => link.rel === "approve");
+    if (!approveLink) {
+      throw new Error(`PayPalPaymentProvider.preparePayment: la Order ${order.id} no trajo link "approve"`);
+    }
+
     return {
       provider: "PAYPAL",
-      clientPayload: { orderId: order.id, clientId: this.config.clientId },
+      clientPayload: { orderId: order.id, approveUrl: approveLink.href },
     };
   }
 

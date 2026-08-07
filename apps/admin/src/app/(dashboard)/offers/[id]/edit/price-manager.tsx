@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import type { Price } from "@repo/core/domain";
+import { isProviderCompatibleWithCurrency, type Price } from "@repo/core/domain";
 import { addPriceAction, removePriceAction } from "../../actions";
 
 const schema = z.object({
@@ -50,7 +50,8 @@ export function PriceManager({ offerId, prices }: { offerId: string; prices: Pri
           <li key={price.id} className="flex items-center justify-between py-2 text-sm">
             <span>
               {(price.amount / 100).toLocaleString("es-CO", { style: "currency", currency: price.currency })} (
-              {price.interval})
+              {price.interval}) —{" "}
+              {isProviderCompatibleWithCurrency("PAYPAL", price.currency) ? "Wompi + PayPal" : "solo Wompi"}
             </span>
             <button
               type="button"
@@ -66,7 +67,11 @@ export function PriceManager({ offerId, prices }: { offerId: string; prices: Pri
       </ul>
       {removeError && <p className="mt-1 text-sm text-red-600">{removeError}</p>}
 
-      <form className="mt-4 flex items-end gap-2" onSubmit={handleSubmit(onSubmit)}>
+      <p className="mt-4 text-xs text-neutral-500">
+        PayPal no admite precios en COP (sin conversión automática) — usá una moneda distinta a COP si querés
+        ofrecer PayPal para este precio nuevo.
+      </p>
+      <form className="mt-2 flex items-end gap-2" onSubmit={handleSubmit(onSubmit)}>
         <div>
           <label className="block text-xs font-medium">Monto (centavos)</label>
           <input className="mt-1 w-32 rounded border px-2 py-1 text-sm" type="number" {...register("amount")} />

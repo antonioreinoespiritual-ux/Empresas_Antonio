@@ -113,6 +113,7 @@ describe.skipIf(!shouldRun)(
         clientSecret: process.env.PAYPAL_CLIENT_SECRET!,
         webhookId: process.env.PAYPAL_WEBHOOK_ID || "no-configurado",
         apiBaseUrl: BASE_URL,
+        webBaseUrl: process.env.APP_BASE_URL ?? "https://example.com",
       });
       const fakeEventBody = JSON.stringify({
         id: `WH-${capture.id}`,

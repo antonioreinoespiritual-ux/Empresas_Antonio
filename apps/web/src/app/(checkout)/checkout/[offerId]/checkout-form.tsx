@@ -1,11 +1,12 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { startCheckoutAction } from "./actions";
 import { openWompiWidget } from "@/lib/wompi-widget";
+import { isProviderCompatibleWithCurrency, type PaymentProviderType } from "@repo/core/domain";
 
 const schema = z.object({
   guestEmail: z.string().email(),
@@ -22,16 +23,44 @@ interface PriceOption {
   interval: string;
 }
 
+const PROVIDER_LABELS: Record<PaymentProviderType, string> = {
+  WOMPI: "Pagar con tarjeta mediante Wompi",
+  PAYPAL: "Pagar con PayPal",
+};
+
 export function CheckoutForm({ offerId, prices }: { offerId: string; prices: PriceOption[] }) {
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { priceId: prices[0]?.id, provider: "WOMPI" },
   });
+
+  const selectedPriceId = watch("priceId");
+  const selectedProvider = watch("provider");
+
+  const selectedPrice = prices.find((price) => price.id === selectedPriceId) ?? prices[0];
+
+  const availableProviders = useMemo<PaymentProviderType[]>(() => {
+    if (!selectedPrice) return ["WOMPI", "PAYPAL"];
+    return (["WOMPI", "PAYPAL"] as const).filter((provider) =>
+      isProviderCompatibleWithCurrency(provider, selectedPrice.currency)
+    );
+  }, [selectedPrice]);
+
+  // Si el comprador cambia a un Price cuya moneda no admite el proveedor ya
+  // seleccionado (p. ej. PayPal + COP), forzamos la selección a uno compatible
+  // en vez de dejar el formulario en un estado que el servidor rechazaría.
+  useEffect(() => {
+    if (!availableProviders.includes(selectedProvider) && availableProviders[0]) {
+      setValue("provider", availableProviders[0]);
+    }
+  }, [availableProviders, selectedProvider, setValue]);
 
   async function onSubmit(values: FormValues) {
     setServerError(null);
@@ -57,6 +86,14 @@ export function CheckoutForm({ offerId, prices }: { offerId: string; prices: Pri
       // El resultado del widget es solo informativo (ADR-011) — la página de
       // gracias consulta el estado real, que llega por webhook.
       window.location.href = `/gracias/${result.checkoutSessionId}`;
+      return;
+    }
+
+    if (result.provider === "PAYPAL" && result.clientPayload?.approveUrl) {
+      // Checkout estándar de PayPal: el comprador aprueba en una página
+      // hospedada por PayPal y vuelve a /api/paypal/return, que dispara el
+      // capture real. Nunca Card Fields (ver ADR y notas de elegibilidad).
+      window.location.href = String(result.clientPayload.approveUrl);
       return;
     }
 
@@ -86,14 +123,15 @@ export function CheckoutForm({ offerId, prices }: { offerId: string; prices: Pri
 
       <fieldset>
         <legend className="text-sm font-medium">Método de pago</legend>
-        <label className="mt-1 flex items-center gap-2 text-sm">
-          <input type="radio" value="WOMPI" {...register("provider")} />
-          Pagar con tarjeta mediante Wompi
-        </label>
-        <label className="mt-1 flex items-center gap-2 text-sm">
-          <input type="radio" value="PAYPAL" {...register("provider")} />
-          Pagar con tarjeta mediante PayPal
-        </label>
+        {availableProviders.map((provider) => (
+          <label key={provider} className="mt-1 flex items-center gap-2 text-sm">
+            <input type="radio" value={provider} {...register("provider")} />
+            {PROVIDER_LABELS[provider]}
+          </label>
+        ))}
+        {selectedPrice && !isProviderCompatibleWithCurrency("PAYPAL", selectedPrice.currency) && (
+          <p className="mt-1 text-xs text-neutral-500">PayPal no está disponible para precios en COP.</p>
+        )}
       </fieldset>
 
       {serverError && <p className="text-sm text-red-600">{serverError}</p>}

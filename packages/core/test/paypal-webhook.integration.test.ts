@@ -41,6 +41,7 @@ function makeDeps(): ProcessProviderWebhookDeps {
         clientSecret: "sandbox-client-secret",
         webhookId: "sandbox-webhook-id",
         apiBaseUrl: "https://api-m.sandbox.paypal.com",
+        webBaseUrl: "https://example.com",
       }),
     },
     webhookEvents: new PrismaWebhookEventRepository(),

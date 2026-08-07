@@ -65,6 +65,10 @@ export function OfferForm({ products }: { products: { id: string; name: string }
 
       <fieldset className="rounded border p-4">
         <legend className="text-sm font-medium">Precios</legend>
+        <p className="text-xs text-neutral-500">
+          La moneda define qué proveedores de pago se ofrecen en el checkout: PayPal no admite COP (sin conversión
+          automática) — usá una moneda distinta a COP si querés ofrecer PayPal para este precio.
+        </p>
         {fields.map((field, index) => (
           <div key={field.id} className="mt-2 flex items-center gap-2">
             <input

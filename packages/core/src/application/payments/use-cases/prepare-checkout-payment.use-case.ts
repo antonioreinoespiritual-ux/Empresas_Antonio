@@ -1,4 +1,9 @@
-import { DomainError, NotFoundError, type PaymentProviderType } from "../../../domain";
+import {
+  DomainError,
+  NotFoundError,
+  isProviderCompatibleWithCurrency,
+  type PaymentProviderType,
+} from "../../../domain";
 import type { CheckoutSessionRepository } from "../../commerce/ports/checkout-session-repository.port";
 import type { OfferRepository } from "../../commerce/ports/offer-repository.port";
 import type { PaymentProvider, PreparedPayment } from "../ports/payment-provider.port";
@@ -35,6 +40,9 @@ export async function prepareCheckoutPayment(
   const price = offer?.prices.find((candidate) => candidate.id === checkoutSession.priceId);
   if (!offer || !price) {
     throw new NotFoundError(`Offer/Price de la CheckoutSession ${input.checkoutSessionId} no existen`);
+  }
+  if (!isProviderCompatibleWithCurrency(input.provider, price.currency)) {
+    throw new DomainError(`${input.provider} no admite pagos en ${price.currency} para esta Offer`);
   }
 
   await deps.checkoutSessions.setProvider(input.checkoutSessionId, input.provider);
