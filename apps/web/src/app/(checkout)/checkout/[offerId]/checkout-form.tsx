@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { startCheckoutAction } from "./actions";
 import { openWompiWidget } from "@/lib/wompi-widget";
-import { isProviderCompatibleWithCurrency, type PaymentProviderType } from "@repo/core/domain";
+import { getAvailableProviders, isProviderCompatibleWithCurrency, type PaymentProviderType } from "@repo/core/domain";
 
 const schema = z.object({
   guestEmail: z.string().email(),
@@ -21,6 +21,7 @@ interface PriceOption {
   amount: number;
   currency: string;
   interval: string;
+  enabledProviders: PaymentProviderType[] | null;
 }
 
 const PROVIDER_LABELS: Record<PaymentProviderType, string> = {
@@ -48,9 +49,7 @@ export function CheckoutForm({ offerId, prices }: { offerId: string; prices: Pri
 
   const availableProviders = useMemo<PaymentProviderType[]>(() => {
     if (!selectedPrice) return ["WOMPI", "PAYPAL"];
-    return (["WOMPI", "PAYPAL"] as const).filter((provider) =>
-      isProviderCompatibleWithCurrency(provider, selectedPrice.currency)
-    );
+    return getAvailableProviders(selectedPrice.currency, selectedPrice.enabledProviders);
   }, [selectedPrice]);
 
   // Si el comprador cambia a un Price cuya moneda no admite el proveedor ya

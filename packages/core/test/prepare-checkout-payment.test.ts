@@ -40,7 +40,7 @@ describe("prepareCheckoutPayment: compatibilidad de proveedor por moneda (sin co
 
     await expect(
       prepareCheckoutPayment(makeDeps(), { checkoutSessionId: fixture.checkoutSession.id, provider: "PAYPAL" })
-    ).rejects.toThrow(/no admite pagos en COP/);
+    ).rejects.toThrow(/no está disponible.*COP/);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -51,7 +51,7 @@ describe("prepareCheckoutPayment: compatibilidad de proveedor por moneda (sin co
 
     await expect(
       prepareCheckoutPayment(makeDeps(), { checkoutSessionId: fixture.checkoutSession.id, provider: "PAYPAL" })
-    ).rejects.toThrow(/no admite pagos en JPY/);
+    ).rejects.toThrow(/no está disponible.*JPY/);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
