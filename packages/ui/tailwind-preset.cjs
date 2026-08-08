@@ -54,4 +54,8 @@ module.exports = {
       },
     },
   },
+  // RichTextBlock usa la clase `prose` para el único bloque que renderiza
+  // HTML de admin — sin este plugin, Tailwind no la reconoce y el preflight
+  // deja títulos/listas sin ninguna jerarquía visual (hallazgo de revisión).
+  plugins: [require("@tailwindcss/typography")],
 };
