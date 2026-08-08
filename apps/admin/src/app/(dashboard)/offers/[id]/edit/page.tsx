@@ -3,6 +3,7 @@ import Link from "next/link";
 import { commerce } from "@/lib/commerce";
 import { ActiveToggle } from "../../active-toggle";
 import { EditOfferNameForm } from "./edit-offer-name-form";
+import { EditOfferThemeForm } from "./edit-offer-theme-form";
 import { PriceManager } from "./price-manager";
 
 export default async function EditOfferPage({ params }: { params: { id: string } }) {
@@ -23,6 +24,7 @@ export default async function EditOfferPage({ params }: { params: { id: string }
         </div>
       </div>
       <EditOfferNameForm offerId={offer.id} defaultName={offer.name} />
+      <EditOfferThemeForm offerId={offer.id} defaultThemeId={offer.themeId} />
       <PriceManager offerId={offer.id} prices={offer.prices} />
     </main>
   );

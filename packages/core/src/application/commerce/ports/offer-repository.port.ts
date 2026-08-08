@@ -1,4 +1,4 @@
-import type { Offer, PaymentProviderType, Price, PriceInterval } from "../../../domain";
+import type { Offer, PaymentProviderType, Price, PriceInterval, ThemeId } from "../../../domain";
 
 export interface OfferWithPrices extends Offer {
   prices: Price[];
@@ -21,6 +21,8 @@ export interface CreateOfferInput {
   name: string;
   validFrom?: Date | null;
   validTo?: Date | null;
+  /** Omitido = DEFAULT_THEME_ID ("premium-light"). */
+  themeId?: ThemeId;
   prices: CreatePriceInput[];
 }
 
@@ -28,6 +30,7 @@ export interface UpdateOfferInput {
   name?: string;
   validFrom?: Date | null;
   validTo?: Date | null;
+  themeId?: ThemeId;
 }
 
 export interface OfferRepository {

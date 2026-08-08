@@ -1,4 +1,5 @@
 import { DomainError } from "../shared/domain-error";
+import type { ThemeId } from "../content/theme-id";
 
 export interface Offer {
   id: string;
@@ -8,6 +9,8 @@ export interface Offer {
   isActive: boolean;
   validFrom: Date | null;
   validTo: Date | null;
+  /** Controla la piel visual de LANDING/CHECKOUT/THANK_YOU de esta Offer — nunca CSS libre, siempre uno de los presets cerrados. */
+  themeId: ThemeId;
 }
 
 export function assertOfferIsSellable(offer: Offer, now: Date = new Date()): void {
