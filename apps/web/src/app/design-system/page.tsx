@@ -62,9 +62,7 @@ export default function DesignSystemPage() {
                   <Heading as="h2" className="mb-3">
                     Cierre de alto contraste
                   </Heading>
-                  <Text className="mb-4" style={{ color: "inherit" }}>
-                    Bloque CTA de cierre — fondo invertido para bookend de la página.
-                  </Text>
+                  <Text className="mb-4">Bloque CTA de cierre — fondo invertido para bookend de la página.</Text>
                   {/* Regla del bloque CTA de cierre: siempre "solid", nunca el
                       buttonPreset del theme. "outline-accent" (Editorial) es
                       ilegible sobre un fondo ya invertido — el propósito de

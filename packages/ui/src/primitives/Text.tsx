@@ -9,7 +9,11 @@ export interface TextProps extends HTMLAttributes<HTMLParagraphElement> {
 }
 
 const SIZE_CLASSES = { sm: "text-sm", md: "text-base", lg: "text-lg" };
-const TONE_CLASSES = { default: "text-foreground", muted: "text-foreground-muted" };
+// "default" no fija color: hereda el `text-foreground`/`text-background` que
+// ya puso <Section> según su tone. Si fijara text-foreground acá, un <Text>
+// dentro de <Section tone="inverted"> (bg-foreground text-background)
+// quedaría con texto foreground sobre fondo foreground — invisible.
+const TONE_CLASSES = { default: "", muted: "text-foreground-muted" };
 const WEIGHT_CLASSES = { normal: "font-normal", medium: "font-medium", semibold: "font-semibold" };
 
 /** Cuerpo de texto — ancho de lectura y color siempre desde tokens, nunca gris hardcodeado. */

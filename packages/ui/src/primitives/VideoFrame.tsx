@@ -22,8 +22,13 @@ export function VideoFrame({ embedUrl, posterImageUrl, autoplay = false, classNa
   return (
     <div className={cn("relative aspect-video w-full overflow-hidden rounded-base bg-surface-muted", className)}>
       {loaded ? (
+        // Siempre con autoplay=1 una vez montado: si `loaded` se activó por
+        // la prop `autoplay`, es la carga inicial de la página; si se activó
+        // por el click del usuario en la fachada, ese click YA es el gesto
+        // de reproducción — pedirle un segundo click dentro del iframe sería
+        // el bug real que esto corrige.
         <iframe
-          src={autoplay ? `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}autoplay=1` : embedUrl}
+          src={`${embedUrl}${embedUrl.includes("?") ? "&" : "?"}autoplay=1`}
           title="Video"
           className="absolute inset-0 h-full w-full"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
