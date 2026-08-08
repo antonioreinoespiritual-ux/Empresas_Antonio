@@ -250,6 +250,10 @@ model Offer {
   isActive   Boolean   @default(true)
   validFrom  DateTime?
   validTo    DateTime?
+  // Piel visual compartida por LANDING/CHECKOUT/THANK_YOU de esta Offer
+  // (Frontend System v1). Enum cerrado a propósito — el admin nunca escribe
+  // CSS, solo elige uno de los presets que resuelve packages/ui.
+  themeId ThemeId @default(premium_light)
 
   product          Product           @relation(fields: [productId], references: [id])
   campaign         Campaign?         @relation(fields: [campaignId], references: [id])
@@ -259,6 +263,13 @@ model Offer {
   pages            Page[]
 
   @@map("offers")
+}
+
+enum ThemeId {
+  premium_light
+  premium_dark
+  editorial
+  high_conversion
 }
 
 enum PriceInterval {

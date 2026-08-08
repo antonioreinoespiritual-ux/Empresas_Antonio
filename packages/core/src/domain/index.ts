@@ -11,4 +11,5 @@ export * from "./commerce/order.entity";
 export * from "./commerce/entitlement.entity";
 export * from "./content/page.entity";
 export * from "./content/page-content";
+export * from "./content/theme-id";
 export * from "./shared/domain-error";

@@ -5,10 +5,23 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { ALL_PAYMENT_PROVIDERS, compatibleProviders, type PaymentProviderType } from "@repo/core/domain";
+import {
+  ALL_PAYMENT_PROVIDERS,
+  compatibleProviders,
+  DEFAULT_THEME_ID,
+  THEME_IDS,
+  type PaymentProviderType,
+  type ThemeId,
+} from "@repo/core/domain";
 import { createOfferAction } from "./actions";
 
 const PROVIDER_LABELS: Record<PaymentProviderType, string> = { WOMPI: "Wompi", PAYPAL: "PayPal" };
+const THEME_LABELS: Record<ThemeId, string> = {
+  "premium-light": "Premium Light",
+  "premium-dark": "Premium Dark",
+  editorial: "Editorial",
+  "high-conversion": "High Conversion",
+};
 
 const priceSchema = z.object({
   amount: z.coerce.number().int().positive(),
@@ -25,6 +38,7 @@ const priceSchema = z.object({
 const schema = z.object({
   productId: z.string().min(1),
   name: z.string().min(1),
+  themeId: z.enum(THEME_IDS),
   prices: z.array(priceSchema).min(1),
 });
 
@@ -43,6 +57,7 @@ export function OfferForm({ products }: { products: { id: string; name: string }
     defaultValues: {
       productId: "",
       name: "",
+      themeId: DEFAULT_THEME_ID,
       prices: [{ amount: 0, currency: "COP", interval: "ONE_TIME", enabled: { WOMPI: true, PAYPAL: true } }],
     },
   });
@@ -67,6 +82,7 @@ export function OfferForm({ products }: { products: { id: string; name: string }
     await createOfferAction({
       productId: values.productId,
       name: values.name,
+      themeId: values.themeId,
       prices: prices.map(({ checkedCount, ...price }) => price),
     });
     router.push("/offers");
@@ -91,6 +107,17 @@ export function OfferForm({ products }: { products: { id: string; name: string }
         <label className="block text-sm font-medium">Nombre de la oferta</label>
         <input className="mt-1 w-full rounded border px-3 py-2" {...register("name")} />
         {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium">Theme (piel visual de la landing/checkout)</label>
+        <select className="mt-1 w-full rounded border px-3 py-2" {...register("themeId")}>
+          {THEME_IDS.map((id) => (
+            <option key={id} value={id}>
+              {THEME_LABELS[id]}
+            </option>
+          ))}
+        </select>
       </div>
 
       <fieldset className="rounded border p-4">
