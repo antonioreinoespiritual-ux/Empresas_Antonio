@@ -1,13 +1,8 @@
 import { notFound } from "next/navigation";
+import { parsePageContent, type LandingPageContent } from "@repo/core/domain";
+import { getTheme } from "@repo/ui/themes";
+import { LandingRenderer } from "@repo/ui/blocks";
 import { commerce } from "@/lib/commerce";
-
-interface LandingContent {
-  heroTitle: string;
-  heroSubtitle?: string;
-  vslEmbedUrl?: string;
-  bodyHtml?: string;
-  ctaLabel?: string;
-}
 
 export default async function LandingBySlugPage({ params }: { params: { slug: string } }) {
   const page = await commerce.pages.findPublishedBySlug(params.slug);
@@ -15,8 +10,18 @@ export default async function LandingBySlugPage({ params }: { params: { slug: st
     notFound();
   }
 
-  const content = page.content as LandingContent;
+  const content = parsePageContent("LANDING", page.content) as LandingPageContent;
+  const checkoutHref = `/checkout/${page.offerId}`;
 
+  // Bloques (Fase B3): renderer moderno con el Theme real de la Offer.
+  if ("blocks" in content) {
+    const offer = await commerce.offers.findById(page.offerId);
+    const theme = getTheme(offer?.themeId ?? "premium-light");
+    return <LandingRenderer blocks={content.blocks} theme={theme} checkoutHref={checkoutHref} />;
+  }
+
+  // Forma legacy (campos sueltos, Fase A hacia atrás): renderer sin tocar,
+  // para no romper ninguna página existente que todavía no usa bloques.
   return (
     <main className="py-16">
       <h1 className="text-4xl font-bold">{content.heroTitle}</h1>
@@ -41,10 +46,7 @@ export default async function LandingBySlugPage({ params }: { params: { slug: st
         <div className="prose mt-8 max-w-none" dangerouslySetInnerHTML={{ __html: content.bodyHtml }} />
       )}
 
-      <a
-        className="mt-8 inline-block rounded bg-neutral-900 px-6 py-3 text-white"
-        href={`/checkout/${page.offerId}`}
-      >
+      <a className="mt-8 inline-block rounded bg-neutral-900 px-6 py-3 text-white" href={checkoutHref}>
         {content.ctaLabel || "Comprar ahora"}
       </a>
     </main>

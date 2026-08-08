@@ -177,6 +177,10 @@ importers:
         version: 2.1.9(@types/node@20.19.43)
 
   packages/ui:
+    dependencies:
+      '@repo/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@repo/config':
         specifier: workspace:*
