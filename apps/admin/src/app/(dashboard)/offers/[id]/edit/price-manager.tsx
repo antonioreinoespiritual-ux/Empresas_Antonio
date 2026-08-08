@@ -19,7 +19,12 @@ const schema = z.object({
   amount: z.coerce.number().int().positive(),
   currency: z.string().length(3),
   interval: z.enum(["ONE_TIME", "RECURRING"]),
-  enabled: z.object({ WOMPI: z.boolean(), PAYPAL: z.boolean() }),
+  // .default(false): un checkbox deshabilitado (proveedor no compatible con
+  // la moneda) queda fuera de los valores que react-hook-form envía en el
+  // submit — sin el default, Zod lo rechazaría como campo faltante y
+  // bloquearía agregar cualquier precio cuya moneda por defecto (COP)
+  // deshabilite PayPal.
+  enabled: z.object({ WOMPI: z.boolean().default(false), PAYPAL: z.boolean().default(false) }),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -33,6 +38,7 @@ const DEFAULT_VALUES: FormValues = {
 export function PriceManager({ offerId, prices }: { offerId: string; prices: Price[] }) {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
   const {
     register,
     control,
@@ -45,10 +51,15 @@ export function PriceManager({ offerId, prices }: { offerId: string; prices: Pri
   const compatible = compatibleProviders(currency);
 
   async function onSubmit(values: FormValues) {
+    setAddError(null);
     const priceCompatible = compatibleProviders(values.currency.toUpperCase());
     const checked = ALL_PAYMENT_PROVIDERS.filter(
       (provider) => values.enabled[provider] && priceCompatible.includes(provider)
     );
+    if (checked.length === 0) {
+      setAddError("El precio necesita al menos un proveedor de pago habilitado.");
+      return;
+    }
     const enabledProviders = checked.length === priceCompatible.length ? null : checked;
     await addPriceAction(offerId, { amount: values.amount, currency: values.currency, interval: values.interval, enabledProviders });
     reset(DEFAULT_VALUES);
@@ -134,6 +145,7 @@ export function PriceManager({ offerId, prices }: { offerId: string; prices: Pri
         </button>
       </form>
       {errors.amount && <p className="mt-1 text-sm text-red-600">{errors.amount.message}</p>}
+      {addError && <p className="mt-1 text-sm text-red-600">{addError}</p>}
     </section>
   );
 }

@@ -73,12 +73,23 @@ export function getAvailableProviders(
  * proveedores compatibles con `currency`. Se llama en la capa de repositorio
  * — server-side, autoritativa — para que un payload manipulado no pueda
  * persistir un proveedor incompatible aunque la UI lo hubiera evitado.
+ *
+ * Un array vacío se rechaza explícitamente: la columna Prisma no admite
+ * `null` (ver toDomainEnabledProviders), así que `[]` en almacenamiento solo
+ * puede significar "sin restricción" en lectura — persistir `[]` con la
+ * intención de "ningún proveedor habilitado" se leería de vuelta como "todos
+ * los compatibles", invirtiendo silenciosamente la restricción del admin.
  */
 export function assertEnabledProvidersAreCompatible(
   currency: string,
   enabledProviders: PaymentProviderType[] | null
 ): void {
   if (enabledProviders === null) return;
+  if (enabledProviders.length === 0) {
+    throw new DomainError(
+      "enabledProviders no puede ser una lista vacía: usa null para permitir todos los proveedores compatibles, o deja al menos uno habilitado"
+    );
+  }
   const compatible = compatibleProviders(currency);
   const invalid = enabledProviders.filter((provider) => !compatible.includes(provider));
   if (invalid.length > 0) {

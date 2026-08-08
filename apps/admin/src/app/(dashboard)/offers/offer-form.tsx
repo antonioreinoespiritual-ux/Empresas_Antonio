@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { ALL_PAYMENT_PROVIDERS, compatibleProviders, type PaymentProviderType } from "@repo/core/domain";
@@ -13,7 +14,12 @@ const priceSchema = z.object({
   amount: z.coerce.number().int().positive(),
   currency: z.string().length(3),
   interval: z.enum(["ONE_TIME", "RECURRING"]),
-  enabled: z.object({ WOMPI: z.boolean(), PAYPAL: z.boolean() }),
+  // .default(false): un checkbox deshabilitado (proveedor no compatible con
+  // la moneda) queda fuera de los valores que react-hook-form envía en el
+  // submit — sin el default, Zod lo rechazaría como campo faltante y
+  // bloquearía la creación de cualquier oferta cuya moneda por defecto (COP)
+  // deshabilite PayPal.
+  enabled: z.object({ WOMPI: z.boolean().default(false), PAYPAL: z.boolean().default(false) }),
 });
 
 const schema = z.object({
@@ -26,6 +32,7 @@ type FormValues = z.infer<typeof schema>;
 
 export function OfferForm({ products }: { products: { id: string; name: string }[] }) {
   const router = useRouter();
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
     control,
@@ -43,18 +50,24 @@ export function OfferForm({ products }: { products: { id: string; name: string }
   const watchedPrices = useWatch({ control, name: "prices" });
 
   async function onSubmit(values: FormValues) {
+    setSubmitError(null);
+    const prices = values.prices.map(({ enabled, ...price }) => {
+      const compatible = compatibleProviders(price.currency.toUpperCase());
+      const checked = ALL_PAYMENT_PROVIDERS.filter((provider) => enabled[provider] && compatible.includes(provider));
+      // Si quedaron marcados todos los compatibles, no es una restricción
+      // real del admin — se guarda null ("todos") para no quedar
+      // desactualizado si en el futuro se agrega un proveedor nuevo.
+      const enabledProviders = checked.length === compatible.length ? null : checked;
+      return { ...price, enabledProviders, checkedCount: checked.length };
+    });
+    if (prices.some((price) => price.checkedCount === 0)) {
+      setSubmitError("Cada precio necesita al menos un proveedor de pago habilitado.");
+      return;
+    }
     await createOfferAction({
       productId: values.productId,
       name: values.name,
-      prices: values.prices.map(({ enabled, ...price }) => {
-        const compatible = compatibleProviders(price.currency.toUpperCase());
-        const checked = ALL_PAYMENT_PROVIDERS.filter((provider) => enabled[provider] && compatible.includes(provider));
-        // Si quedaron marcados todos los compatibles, no es una restricción
-        // real del admin — se guarda null ("todos") para no quedar
-        // desactualizado si en el futuro se agrega un proveedor nuevo.
-        const enabledProviders = checked.length === compatible.length ? null : checked;
-        return { ...price, enabledProviders };
-      }),
+      prices: prices.map(({ checkedCount, ...price }) => price),
     });
     router.push("/offers");
   }
@@ -141,6 +154,8 @@ export function OfferForm({ products }: { products: { id: string; name: string }
         </button>
         {errors.prices && <p className="mt-1 text-sm text-red-600">Revisa los precios ingresados</p>}
       </fieldset>
+
+      {submitError && <p className="text-sm text-red-600">{submitError}</p>}
 
       <button
         className="self-start rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"

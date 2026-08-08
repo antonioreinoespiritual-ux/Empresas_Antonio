@@ -69,6 +69,10 @@ describe("assertEnabledProvidersAreCompatible: guarda contra un enabledProviders
   it("lanza DomainError si se intenta habilitar PayPal para COP", () => {
     expect(() => assertEnabledProvidersAreCompatible("COP", ["WOMPI", "PAYPAL"])).toThrow(/no es compatible/);
   });
+
+  it("lanza DomainError ante un array vacío explícito (ambiguo con 'todos' en almacenamiento)", () => {
+    expect(() => assertEnabledProvidersAreCompatible("USD", [])).toThrow(/lista vacía/);
+  });
 });
 
 describe("PrismaOfferRepository: rechaza server-side un enabledProviders incompatible al crear el Price", () => {
@@ -102,6 +106,15 @@ describe("PrismaOfferRepository: rechaza server-side un enabledProviders incompa
 
     const created = await repo.addPrice(fixture.offer.id, { amount: 1000, currency: "USD", interval: "ONE_TIME" });
     expect(created.enabledProviders).toBeNull();
+  });
+
+  it("addPrice() rechaza un enabledProviders: [] explícito (no puede distinguirse de 'todos' al releer)", async () => {
+    const fixture = await createFixtureOffer({ currency: "USD" });
+    const repo = new PrismaOfferRepository();
+
+    await expect(
+      repo.addPrice(fixture.offer.id, { amount: 1000, currency: "USD", interval: "ONE_TIME", enabledProviders: [] })
+    ).rejects.toThrow(/lista vacía/);
   });
 });
 
