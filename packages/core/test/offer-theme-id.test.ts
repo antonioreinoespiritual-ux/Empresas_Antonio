@@ -66,6 +66,24 @@ describe("PrismaOfferRepository: themeId real contra Postgres", () => {
     expect(updated.themeId).toBe("high-conversion");
   });
 
+  it("update() rechaza un themeId: null explícito en vez de resetear al default silenciosamente", async () => {
+    const product = await createProduct();
+    const repo = new PrismaOfferRepository();
+    const created = await repo.create({
+      productId: product.id,
+      name: "Oferta a proteger de un payload manipulado",
+      themeId: "high-conversion",
+      prices: [{ amount: 1000, currency: "USD", interval: "ONE_TIME" }],
+    });
+
+    // TS no permite themeId: null en el tipo, pero un payload manipulado
+    // (fetch directo al server action) sí podría enviarlo — simula ese caso.
+    await expect(repo.update(created.id, { themeId: null } as never)).rejects.toThrow(/themeId inválido/);
+
+    const untouched = await repo.findById(created.id);
+    expect(untouched?.themeId).toBe("high-conversion");
+  });
+
   it("list() incluye el themeId de cada Offer", async () => {
     const product = await createProduct();
     const repo = new PrismaOfferRepository();

@@ -57,13 +57,19 @@ function toDomainThemeId(stored: PrismaThemeId): ThemeId {
 }
 
 function toStoredThemeId(domain: ThemeId | undefined): PrismaThemeId {
-  const themeId = domain ?? DEFAULT_THEME_ID;
-  // Autoritativo: un themeId fuera del enum de dominio (payload manipulado,
-  // el tipo TS no protege un `any` en runtime) nunca debe poder persistirse.
-  if (!isValidThemeId(themeId)) {
-    throw new Error(`themeId inválido: ${themeId}`);
+  // Solo `undefined` (campo omitido) aplica el default. `??` trataría un
+  // `null` de un payload manipulado igual que "omitido" y lo convertiría en
+  // premium-light en vez de rechazarlo — en un update() eso resetearía
+  // silenciosamente el theme de una Offer existente en lugar de fallar.
+  if (domain === undefined) {
+    return THEME_ID_TO_PRISMA[DEFAULT_THEME_ID];
   }
-  return THEME_ID_TO_PRISMA[themeId];
+  // Autoritativo: un themeId fuera del enum de dominio (payload manipulado,
+  // el tipo TS no protege un valor ajeno en runtime) nunca debe poder persistirse.
+  if (!isValidThemeId(domain)) {
+    throw new Error(`themeId inválido: ${domain}`);
+  }
+  return THEME_ID_TO_PRISMA[domain];
 }
 
 function toDomainOffer<T extends { themeId: PrismaThemeId }>(offer: T): Omit<T, "themeId"> & { themeId: ThemeId } {
