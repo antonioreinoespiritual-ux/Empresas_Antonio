@@ -272,6 +272,12 @@ model Price {
   amount   Int
   currency String
   interval PriceInterval
+  // Subconjunto de proveedores técnicamente compatibles con `currency` que el
+  // admin decide ofrecer. Prisma no permite listas escalares opcionales, así
+  // que [] es el valor en columna — la capa de repositorio lo traduce a/desde
+  // `null` ("todos los compatibles") en el dominio. Nunca puede ampliar más
+  // allá de compatibleProviders(currency), solo restringir.
+  enabledProviders PaymentProviderType[] @default([])
 
   offer            Offer             @relation(fields: [offerId], references: [id])
   orderItems       OrderItem[]

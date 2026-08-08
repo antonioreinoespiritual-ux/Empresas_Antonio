@@ -11,6 +11,7 @@ export async function createFixtureOffer(overrides?: {
   provider?: "WOMPI" | "PAYPAL";
   amount?: number;
   currency?: string;
+  enabledProviders?: ("WOMPI" | "PAYPAL")[];
 }) {
   const product = await prisma.product.create({
     data: { name: `Test Product ${randomUUID()}`, type: "DIGITAL", status: "PUBLISHED" },
@@ -21,7 +22,18 @@ export async function createFixtureOffer(overrides?: {
       productId: product.id,
       name: "Test Offer",
       isActive: true,
-      prices: { create: { amount: overrides?.amount ?? 5_000_000, currency: overrides?.currency ?? "COP", interval: "ONE_TIME" } },
+      prices: {
+        create: {
+          amount: overrides?.amount ?? 5_000_000,
+          currency: overrides?.currency ?? "COP",
+          interval: "ONE_TIME",
+          // Se escribe directo con Prisma (bypass del repositorio y su
+          // validación) a propósito: simula un Price ya persistido con una
+          // restricción de admin, para probar que el use case de checkout
+          // sigue siendo la autoridad final aunque el dato ya exista en DB.
+          enabledProviders: overrides?.enabledProviders ?? [],
+        },
+      },
     },
     include: { prices: true },
   });

@@ -1,4 +1,4 @@
-import type { Offer, Price, PriceInterval } from "../../../domain";
+import type { Offer, PaymentProviderType, Price, PriceInterval } from "../../../domain";
 
 export interface OfferWithPrices extends Offer {
   prices: Price[];
@@ -12,6 +12,8 @@ export interface CreatePriceInput {
   amount: number;
   currency: string;
   interval: PriceInterval;
+  /** Omitido o null = todos los proveedores compatibles con currency. */
+  enabledProviders?: PaymentProviderType[] | null;
 }
 
 export interface CreateOfferInput {

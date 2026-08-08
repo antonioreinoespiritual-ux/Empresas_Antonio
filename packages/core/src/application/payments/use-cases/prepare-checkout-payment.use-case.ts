@@ -1,9 +1,4 @@
-import {
-  DomainError,
-  NotFoundError,
-  isProviderCompatibleWithCurrency,
-  type PaymentProviderType,
-} from "../../../domain";
+import { DomainError, NotFoundError, getAvailableProviders, type PaymentProviderType } from "../../../domain";
 import type { CheckoutSessionRepository } from "../../commerce/ports/checkout-session-repository.port";
 import type { OfferRepository } from "../../commerce/ports/offer-repository.port";
 import type { PaymentProvider, PreparedPayment } from "../ports/payment-provider.port";
@@ -41,8 +36,13 @@ export async function prepareCheckoutPayment(
   if (!offer || !price) {
     throw new NotFoundError(`Offer/Price de la CheckoutSession ${input.checkoutSessionId} no existen`);
   }
-  if (!isProviderCompatibleWithCurrency(input.provider, price.currency)) {
-    throw new DomainError(`${input.provider} no admite pagos en ${price.currency} para esta Offer`);
+  // Fuente de verdad final: compatibleProviders(currency) ∩ enabledProviders
+  // del Price. Autoritativo — no confía en que el navegador ya haya filtrado
+  // las opciones, así que un payload manipulado no puede forzar un proveedor
+  // incompatible con la moneda ni uno que el admin desactivó explícitamente.
+  const availableProviders = getAvailableProviders(price.currency, price.enabledProviders);
+  if (!availableProviders.includes(input.provider)) {
+    throw new DomainError(`${input.provider} no está disponible para esta Offer en ${price.currency}`);
   }
 
   await deps.checkoutSessions.setProvider(input.checkoutSessionId, input.provider);
