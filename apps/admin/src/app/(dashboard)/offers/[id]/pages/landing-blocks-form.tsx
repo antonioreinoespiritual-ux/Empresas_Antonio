@@ -4,6 +4,8 @@ import { useState } from "react";
 import type { Page } from "@repo/core/domain";
 import { savePageAction } from "./actions";
 
+const SLUG_PATTERN = /^[a-z0-9-]+$/;
+
 const EXAMPLE = {
   blocks: [
     { type: "hero", title: "Título de tu oferta", subtitle: "Subtítulo breve", ctaLabel: "Comprar ahora" },
@@ -30,6 +32,15 @@ export function LandingBlocksForm({ offerId, page }: { offerId: string; page: Pa
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // Sin esto, un slug vacío o con mayúsculas/espacios se guarda igual (el
+    // JSON de content sigue siendo válido) y la página queda publicada sin
+    // ninguna URL en /[slug] que pueda resolverla — mismo patrón que ya
+    // valida LandingPageForm, aplicado acá porque este form escribe al
+    // mismo campo `slug` del Page.
+    if (!SLUG_PATTERN.test(slug)) {
+      setError("El slug es obligatorio: solo minúsculas, números y guiones.");
+      return;
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(json);

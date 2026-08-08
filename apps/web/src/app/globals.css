@@ -1,3 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* El break-out full-bleed de <Section> (packages/ui) usa w-screen, que en
+   una página con scrollbar vertical es más ancho que 100% y produce un
+   scroll horizontal fantasma de 1px — overflow-x: hidden en body lo anula
+   sin recortar contenido real (el body ya no crece más allá del viewport). */
+body {
+  overflow-x: hidden;
+}

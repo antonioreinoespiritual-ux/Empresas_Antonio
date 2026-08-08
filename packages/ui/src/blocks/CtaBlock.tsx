@@ -14,11 +14,9 @@ export function CtaBlock({ content, checkoutHref }: { content: CtaBlockContent; 
         <Stack gap="md" align="center">
           {content.headline && <Heading as="h2">{content.headline}</Heading>}
           {content.subtext && <Text className="mx-auto">{content.subtext}</Text>}
-          <a href={checkoutHref}>
-            <Button variant="primary" size="lg" buttonPreset="solid">
-              {content.buttonLabel}
-            </Button>
-          </a>
+          <Button href={checkoutHref} variant="primary" size="lg" buttonPreset="solid">
+            {content.buttonLabel}
+          </Button>
         </Stack>
       </Container>
     </Section>

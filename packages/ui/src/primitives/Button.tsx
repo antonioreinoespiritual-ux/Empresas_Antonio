@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes } from "react";
 import type { Theme } from "../themes/types";
 import { cn } from "../utils/cn";
 
@@ -7,6 +7,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: "sm" | "md" | "lg";
   /** Solo afecta el relleno del variant "primary" (solid vs. contorno) — el radio ya llega por --radius-button. */
   buttonPreset?: Theme["buttonPreset"];
+  /** Renderiza un <a> en vez de un <button> — nunca anides Button dentro de un <a>: <button> dentro de <a> es HTML inválido y confunde foco/activación para teclado y lectores de pantalla. */
+  href?: string;
 }
 
 const SIZE_CLASSES = { sm: "px-4 py-2 text-sm", md: "px-5 py-2.5 text-[15px]", lg: "px-7 py-3.5 text-base" };
@@ -29,11 +31,15 @@ const VARIANT_CLASSES: Record<Exclude<ButtonProps["variant"], undefined>, string
 };
 
 /** Único botón del sistema — cada bloque comercial lo usa en vez de un <button> con clases sueltas. */
-export function Button({ variant = "primary", size = "md", buttonPreset = "solid", className, ...props }: ButtonProps) {
-  return (
-    <button
-      className={cn(BASE, SIZE_CLASSES[size], variant === "primary" ? primaryClasses(buttonPreset) : VARIANT_CLASSES[variant], className)}
-      {...props}
-    />
+export function Button({ variant = "primary", size = "md", buttonPreset = "solid", className, href, ...props }: ButtonProps) {
+  const classes = cn(
+    BASE,
+    SIZE_CLASSES[size],
+    variant === "primary" ? primaryClasses(buttonPreset) : VARIANT_CLASSES[variant],
+    className
   );
+  if (href) {
+    return <a href={href} className={classes} {...(props as AnchorHTMLAttributes<HTMLAnchorElement>)} />;
+  }
+  return <button className={classes} {...props} />;
 }

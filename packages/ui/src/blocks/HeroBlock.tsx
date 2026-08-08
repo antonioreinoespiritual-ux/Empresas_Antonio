@@ -30,11 +30,9 @@ export function HeroBlock({ content, checkoutHref, theme }: { content: HeroBlock
               {content.subtitle}
             </Text>
           )}
-          <a href={checkoutHref}>
-            <Button variant="primary" size="lg" buttonPreset={theme.buttonPreset}>
-              {content.ctaLabel}
-            </Button>
-          </a>
+          <Button href={checkoutHref} variant="primary" size="lg" buttonPreset={theme.buttonPreset}>
+            {content.ctaLabel}
+          </Button>
         </Stack>
       </Container>
     </Section>
