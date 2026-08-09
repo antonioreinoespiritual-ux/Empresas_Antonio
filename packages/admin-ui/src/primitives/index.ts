@@ -2,6 +2,7 @@ export * from "./AppShell";
 export * from "./Button";
 export * from "./Card";
 export * from "./Checkbox";
+export * from "./ConfirmDialog";
 export * from "./EmptyState";
 export * from "./Field";
 export * from "./Input";

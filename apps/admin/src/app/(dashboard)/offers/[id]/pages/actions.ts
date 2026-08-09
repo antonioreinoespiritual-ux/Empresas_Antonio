@@ -22,8 +22,17 @@ export async function savePageAction(input: {
   }
 }
 
-export async function setPageStatusAction(offerId: string, pageId: string, status: PageStatus) {
+export async function setPageStatusAction(
+  offerId: string,
+  pageId: string,
+  status: PageStatus
+): Promise<{ ok: boolean; error?: string }> {
   await requireAdminSession();
-  await commerce.pages.setStatus(pageId, status);
-  revalidatePath(`/offers/${offerId}/pages`);
+  try {
+    await commerce.pages.setStatus(pageId, status);
+    revalidatePath(`/offers/${offerId}/pages`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "No se pudo cambiar el estado de la página" };
+  }
 }

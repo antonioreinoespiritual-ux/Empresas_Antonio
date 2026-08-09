@@ -1,10 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import type { Page } from "@repo/core/domain";
+import { Button, Card, Field, Input, Textarea, useToast } from "@repo/admin-ui/primitives";
 import { savePageAction, setPageStatusAction } from "./actions";
 import { PublishButton } from "./publish-button";
 
@@ -27,7 +27,7 @@ interface LandingContent {
 }
 
 export function LandingPageForm({ offerId, page }: { offerId: string; page: Page | null }) {
-  const [error, setError] = useState<string | null>(null);
+  const { show } = useToast();
   const content = (page?.content ?? {}) as LandingContent;
   const {
     register,
@@ -46,7 +46,6 @@ export function LandingPageForm({ offerId, page }: { offerId: string; page: Page
   });
 
   async function onSubmit(values: FormValues) {
-    setError(null);
     const { slug, vslEmbedUrl, ...rest } = values;
     const result = await savePageAction({
       offerId,
@@ -54,64 +53,48 @@ export function LandingPageForm({ offerId, page }: { offerId: string; page: Page
       slug,
       content: { ...rest, vslEmbedUrl: vslEmbedUrl || undefined },
     });
-    if (!result.ok) setError(result.error ?? "No se pudo guardar");
+    show(result.ok ? "Página guardada" : result.error ?? "No se pudo guardar", result.ok ? "success" : "danger");
   }
 
   return (
-    <section className="rounded border p-4">
+    <Card>
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium">Página de ventas (landing)</h2>
+        <h2 className="text-base font-semibold text-ink">Página de ventas (landing)</h2>
         {page && (
           <PublishButton
             status={page.status}
-            onToggle={() =>
-              setPageStatusAction(offerId, page.id, page.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED")
-            }
+            onToggle={() => setPageStatusAction(offerId, page.id, page.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
           />
         )}
       </div>
       {page?.slug && (
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-ink-muted">
           URL pública: <code>/{page.slug}</code>
         </p>
       )}
       <form className="mt-4 flex flex-col gap-3" onSubmit={handleSubmit(onSubmit)}>
-        <div>
-          <label className="block text-sm font-medium">Slug (URL)</label>
-          <input className="mt-1 w-full rounded border px-3 py-2 text-sm" {...register("slug")} />
-          {errors.slug && <p className="mt-1 text-sm text-red-600">{errors.slug.message}</p>}
-        </div>
-        <div>
-          <label className="block text-sm font-medium">Título principal</label>
-          <input className="mt-1 w-full rounded border px-3 py-2 text-sm" {...register("heroTitle")} />
-          {errors.heroTitle && <p className="mt-1 text-sm text-red-600">{errors.heroTitle.message}</p>}
-        </div>
-        <div>
-          <label className="block text-sm font-medium">Subtítulo</label>
-          <input className="mt-1 w-full rounded border px-3 py-2 text-sm" {...register("heroSubtitle")} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium">URL del VSL (embed)</label>
-          <input className="mt-1 w-full rounded border px-3 py-2 text-sm" {...register("vslEmbedUrl")} />
-          {errors.vslEmbedUrl && <p className="mt-1 text-sm text-red-600">URL inválida</p>}
-        </div>
-        <div>
-          <label className="block text-sm font-medium">Contenido (HTML)</label>
-          <textarea className="mt-1 w-full rounded border px-3 py-2 text-sm" rows={6} {...register("bodyHtml")} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium">Texto del botón</label>
-          <input className="mt-1 w-full rounded border px-3 py-2 text-sm" {...register("ctaLabel")} />
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          className="self-start rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-          type="submit"
-          disabled={isSubmitting}
-        >
+        <Field label="Slug (URL)" htmlFor="slug" error={errors.slug?.message}>
+          <Input id="slug" invalid={!!errors.slug} {...register("slug")} />
+        </Field>
+        <Field label="Título principal" htmlFor="heroTitle" error={errors.heroTitle?.message}>
+          <Input id="heroTitle" invalid={!!errors.heroTitle} {...register("heroTitle")} />
+        </Field>
+        <Field label="Subtítulo" htmlFor="heroSubtitle">
+          <Input id="heroSubtitle" {...register("heroSubtitle")} />
+        </Field>
+        <Field label="URL del VSL (embed)" htmlFor="vslEmbedUrl" error={errors.vslEmbedUrl ? "URL inválida" : undefined}>
+          <Input id="vslEmbedUrl" invalid={!!errors.vslEmbedUrl} {...register("vslEmbedUrl")} />
+        </Field>
+        <Field label="Contenido (HTML)" htmlFor="bodyHtml">
+          <Textarea id="bodyHtml" rows={6} {...register("bodyHtml")} />
+        </Field>
+        <Field label="Texto del botón" htmlFor="ctaLabel">
+          <Input id="ctaLabel" {...register("ctaLabel")} />
+        </Field>
+        <Button type="submit" disabled={isSubmitting} className="self-start">
           Guardar
-        </button>
+        </Button>
       </form>
-    </section>
+    </Card>
   );
 }

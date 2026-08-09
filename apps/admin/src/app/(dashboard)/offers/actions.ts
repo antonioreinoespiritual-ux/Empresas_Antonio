@@ -16,11 +16,19 @@ export async function createOfferAction(input: CreateOfferInput): Promise<{ ok: 
   }
 }
 
-export async function updateOfferAction(offerId: string, input: UpdateOfferInput) {
+export async function updateOfferAction(
+  offerId: string,
+  input: UpdateOfferInput
+): Promise<{ ok: boolean; error?: string }> {
   await requireAdminSession();
-  await commerce.offers.update(offerId, input);
-  revalidatePath("/offers");
-  revalidatePath(`/offers/${offerId}/edit`);
+  try {
+    await commerce.offers.update(offerId, input);
+    revalidatePath("/offers");
+    revalidatePath(`/offers/${offerId}/edit`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "No se pudo actualizar la oferta" };
+  }
 }
 
 export async function setOfferActiveAction(
@@ -37,10 +45,18 @@ export async function setOfferActiveAction(
   }
 }
 
-export async function addPriceAction(offerId: string, price: CreatePriceInput) {
+export async function addPriceAction(
+  offerId: string,
+  price: CreatePriceInput
+): Promise<{ ok: boolean; error?: string }> {
   await requireAdminSession();
-  await commerce.offers.addPrice(offerId, price);
-  revalidatePath(`/offers/${offerId}/edit`);
+  try {
+    await commerce.offers.addPrice(offerId, price);
+    revalidatePath(`/offers/${offerId}/edit`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "No se pudo agregar el precio" };
+  }
 }
 
 export async function removePriceAction(
