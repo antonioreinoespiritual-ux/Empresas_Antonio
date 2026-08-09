@@ -2,12 +2,13 @@
 
 import type { ReactNode } from "react";
 import type { LandingBlock } from "@repo/core/domain";
+import { Button, Checkbox, Field, Input, Textarea } from "@repo/admin-ui/primitives";
 
 type BenefitItem = Extract<LandingBlock, { type: "benefits" }>["items"][number];
 type TestimonialItem = Extract<LandingBlock, { type: "testimonials" }>["items"][number];
 type FaqItem = Extract<LandingBlock, { type: "faq" }>["items"][number];
 
-function TextInput({
+function TextField({
   label,
   value,
   onChange,
@@ -19,36 +20,24 @@ function TextInput({
   placeholder?: string;
 }) {
   return (
-    <div>
-      <label className="block text-xs font-medium text-neutral-600">{label}</label>
-      <input
-        className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
+    <Field label={label}>
+      <Input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+    </Field>
   );
 }
 
-function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function TextAreaField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
-    <div>
-      <label className="block text-xs font-medium text-neutral-600">{label}</label>
-      <textarea
-        className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
-        rows={3}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
+    <Field label={label}>
+      <Textarea rows={3} value={value} onChange={(e) => onChange(e.target.value)} />
+    </Field>
   );
 }
 
-function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+function CheckboxField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-neutral-700">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className="flex items-center gap-2 text-sm text-ink">
+      <Checkbox checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
   );
@@ -84,32 +73,29 @@ function ItemsEditor<T>({
 
   return (
     <div className="flex flex-col gap-3">
-      <TextInput label="Encabezado (opcional)" value={heading ?? ""} onChange={onHeadingChange} />
+      <TextField label="Encabezado (opcional)" value={heading ?? ""} onChange={onHeadingChange} />
       <div className="flex flex-col gap-2">
         {items.map((item, index) => (
-          <div key={index} className="rounded border border-dashed p-2">
+          <div key={index} className="rounded-md border border-dashed border-border p-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-neutral-500">Elemento {index + 1}</span>
-              <button
+              <span className="text-xs font-medium text-ink-muted">Elemento {index + 1}</span>
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => removeItem(index)}
                 disabled={items.length <= 1}
-                className="text-xs text-red-600 disabled:opacity-30"
               >
                 Quitar
-              </button>
+              </Button>
             </div>
             <div className="mt-1.5 flex flex-col gap-2">{renderItem(item, (next) => updateItem(index, next))}</div>
           </div>
         ))}
       </div>
-      <button
-        type="button"
-        onClick={() => onItemsChange([...items, newItem()])}
-        className="self-start rounded border px-2 py-1 text-xs"
-      >
+      <Button type="button" variant="secondary" size="sm" className="self-start" onClick={() => onItemsChange([...items, newItem()])}>
         + Agregar elemento
-      </button>
+      </Button>
     </div>
   );
 }
@@ -120,30 +106,30 @@ export function BlockFields({ block, onChange }: { block: LandingBlock; onChange
     case "hero":
       return (
         <div className="flex flex-col gap-2">
-          <TextInput label="Título" value={block.title} onChange={(v) => onChange({ ...block, title: v })} />
-          <TextInput
+          <TextField label="Título" value={block.title} onChange={(v) => onChange({ ...block, title: v })} />
+          <TextField
             label="Subtítulo (opcional)"
             value={block.subtitle ?? ""}
             onChange={(v) => onChange({ ...block, subtitle: v || undefined })}
           />
-          <TextInput
+          <TextField
             label="URL de imagen de fondo (opcional)"
             value={block.backgroundImageUrl ?? ""}
             onChange={(v) => onChange({ ...block, backgroundImageUrl: v || undefined })}
           />
-          <TextInput label="Texto del botón" value={block.ctaLabel} onChange={(v) => onChange({ ...block, ctaLabel: v })} />
+          <TextField label="Texto del botón" value={block.ctaLabel} onChange={(v) => onChange({ ...block, ctaLabel: v })} />
         </div>
       );
     case "vsl":
       return (
         <div className="flex flex-col gap-2">
-          <TextInput label="URL del video (embed)" value={block.embedUrl} onChange={(v) => onChange({ ...block, embedUrl: v })} />
-          <TextInput
+          <TextField label="URL del video (embed)" value={block.embedUrl} onChange={(v) => onChange({ ...block, embedUrl: v })} />
+          <TextField
             label="Imagen de portada (opcional)"
             value={block.posterImageUrl ?? ""}
             onChange={(v) => onChange({ ...block, posterImageUrl: v || undefined })}
           />
-          <Checkbox
+          <CheckboxField
             label="Reproducir automáticamente"
             checked={block.autoplay}
             onChange={(v) => onChange({ ...block, autoplay: v })}
@@ -160,9 +146,9 @@ export function BlockFields({ block, onChange }: { block: LandingBlock; onChange
           newItem={(): BenefitItem => ({ title: "", description: "" })}
           renderItem={(item, update) => (
             <>
-              <TextInput label="Título" value={item.title} onChange={(v) => update({ ...item, title: v })} />
-              <TextInput label="Descripción" value={item.description} onChange={(v) => update({ ...item, description: v })} />
-              <TextInput
+              <TextField label="Título" value={item.title} onChange={(v) => update({ ...item, title: v })} />
+              <TextField label="Descripción" value={item.description} onChange={(v) => update({ ...item, description: v })} />
+              <TextField
                 label="Ícono (opcional, un emoji)"
                 value={item.icon ?? ""}
                 onChange={(v) => update({ ...item, icon: v || undefined })}
@@ -181,14 +167,14 @@ export function BlockFields({ block, onChange }: { block: LandingBlock; onChange
           newItem={(): TestimonialItem => ({ quote: "", authorName: "" })}
           renderItem={(item, update) => (
             <>
-              <TextArea label="Testimonio" value={item.quote} onChange={(v) => update({ ...item, quote: v })} />
-              <TextInput label="Nombre" value={item.authorName} onChange={(v) => update({ ...item, authorName: v })} />
-              <TextInput
+              <TextAreaField label="Testimonio" value={item.quote} onChange={(v) => update({ ...item, quote: v })} />
+              <TextField label="Nombre" value={item.authorName} onChange={(v) => update({ ...item, authorName: v })} />
+              <TextField
                 label="Rol (opcional)"
                 value={item.authorRole ?? ""}
                 onChange={(v) => update({ ...item, authorRole: v || undefined })}
               />
-              <TextInput
+              <TextField
                 label="URL de foto (opcional)"
                 value={item.avatarUrl ?? ""}
                 onChange={(v) => update({ ...item, avatarUrl: v || undefined })}
@@ -207,8 +193,8 @@ export function BlockFields({ block, onChange }: { block: LandingBlock; onChange
           newItem={(): FaqItem => ({ question: "", answer: "" })}
           renderItem={(item, update) => (
             <>
-              <TextInput label="Pregunta" value={item.question} onChange={(v) => update({ ...item, question: v })} />
-              <TextArea label="Respuesta" value={item.answer} onChange={(v) => update({ ...item, answer: v })} />
+              <TextField label="Pregunta" value={item.question} onChange={(v) => update({ ...item, question: v })} />
+              <TextAreaField label="Respuesta" value={item.answer} onChange={(v) => update({ ...item, answer: v })} />
             </>
           )}
         />
@@ -216,9 +202,9 @@ export function BlockFields({ block, onChange }: { block: LandingBlock; onChange
     case "guarantee":
       return (
         <div className="flex flex-col gap-2">
-          <TextInput label="Título" value={block.title} onChange={(v) => onChange({ ...block, title: v })} />
-          <TextArea label="Descripción" value={block.description} onChange={(v) => onChange({ ...block, description: v })} />
-          <TextInput
+          <TextField label="Título" value={block.title} onChange={(v) => onChange({ ...block, title: v })} />
+          <TextAreaField label="Descripción" value={block.description} onChange={(v) => onChange({ ...block, description: v })} />
+          <TextField
             label="Ícono del sello (opcional, un emoji)"
             value={block.badgeIcon ?? ""}
             onChange={(v) => onChange({ ...block, badgeIcon: v || undefined })}
@@ -228,21 +214,21 @@ export function BlockFields({ block, onChange }: { block: LandingBlock; onChange
     case "cta":
       return (
         <div className="flex flex-col gap-2">
-          <TextInput
+          <TextField
             label="Titular (opcional)"
             value={block.headline ?? ""}
             onChange={(v) => onChange({ ...block, headline: v || undefined })}
           />
-          <TextInput
+          <TextField
             label="Subtexto (opcional)"
             value={block.subtext ?? ""}
             onChange={(v) => onChange({ ...block, subtext: v || undefined })}
           />
-          <TextInput label="Texto del botón" value={block.buttonLabel} onChange={(v) => onChange({ ...block, buttonLabel: v })} />
+          <TextField label="Texto del botón" value={block.buttonLabel} onChange={(v) => onChange({ ...block, buttonLabel: v })} />
         </div>
       );
     case "richText":
-      return <TextArea label="HTML" value={block.html} onChange={(v) => onChange({ ...block, html: v })} />;
+      return <TextAreaField label="HTML" value={block.html} onChange={(v) => onChange({ ...block, html: v })} />;
     default: {
       const exhaustive: never = block;
       return exhaustive;

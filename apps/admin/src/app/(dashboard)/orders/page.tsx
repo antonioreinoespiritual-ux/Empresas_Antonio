@@ -40,7 +40,12 @@ export default async function OrdersPage() {
                 <TableCell className="font-medium">{order.customerEmail}</TableCell>
                 <TableCell className="text-ink-muted">{order.offerName}</TableCell>
                 <TableCell className="tabular-nums">
-                  {(order.totalAmount / 100).toLocaleString("es-CO", { style: "currency", currency: order.currency })}
+                  {(order.totalAmount / 100).toLocaleString("es-CO", {
+                    style: "currency",
+                    currency: order.currency,
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                  })}
                 </TableCell>
                 <TableCell>
                   <StatusPill tone={STATUS_TONE[order.status] ?? "neutral"}>

@@ -11,6 +11,7 @@ import {
   type PaymentProviderType,
   type Price,
 } from "@repo/core/domain";
+import { Button, Card, Checkbox, ConfirmDialog, Field, Input, Select, StatusPill, useToast } from "@repo/admin-ui/primitives";
 import { addPriceAction, removePriceAction } from "../../actions";
 
 const PROVIDER_LABELS: Record<PaymentProviderType, string> = { WOMPI: "Wompi", PAYPAL: "PayPal" };
@@ -36,8 +37,9 @@ const DEFAULT_VALUES: FormValues = {
 };
 
 export function PriceManager({ offerId, prices }: { offerId: string; prices: Price[] }) {
+  const { show } = useToast();
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
   const {
     register,
@@ -61,91 +63,124 @@ export function PriceManager({ offerId, prices }: { offerId: string; prices: Pri
       return;
     }
     const enabledProviders = checked.length === priceCompatible.length ? null : checked;
-    await addPriceAction(offerId, { amount: values.amount, currency: values.currency, interval: values.interval, enabledProviders });
+    const result = await addPriceAction(offerId, {
+      amount: values.amount,
+      currency: values.currency,
+      interval: values.interval,
+      enabledProviders,
+    });
+    if (!result.ok) {
+      setAddError(result.error ?? "No se pudo agregar el precio");
+      return;
+    }
     reset(DEFAULT_VALUES);
+    show("Precio agregado");
   }
 
-  async function onRemove(priceId: string) {
-    setRemovingId(priceId);
-    setRemoveError(null);
-    const result = await removePriceAction(offerId, priceId);
+  async function onConfirmRemove() {
+    if (!confirmingId) return;
+    setRemovingId(confirmingId);
+    const result = await removePriceAction(offerId, confirmingId);
     setRemovingId(null);
-    if (!result.ok) {
-      setRemoveError(result.error ?? "No se pudo quitar el precio");
-    }
+    setConfirmingId(null);
+    show(result.ok ? "Precio eliminado" : result.error ?? "No se pudo quitar el precio", result.ok ? "success" : "danger");
   }
 
   return (
     <section className="mt-8 max-w-xl">
-      <h2 className="text-lg font-medium">Precios</h2>
-      <ul className="mt-2 divide-y">
+      <h2 className="text-base font-semibold text-ink">Precios</h2>
+      <div className="mt-2 flex flex-col gap-2">
         {prices.map((price) => {
           const available = getAvailableProviders(price.currency, price.enabledProviders);
           const isRestricted = price.enabledProviders !== null;
           return (
-            <li key={price.id} className="flex items-center justify-between py-2 text-sm">
-              <span>
-                {(price.amount / 100).toLocaleString("es-CO", { style: "currency", currency: price.currency })} (
-                {price.interval}) — {available.map((p) => PROVIDER_LABELS[p]).join(" + ") || "sin proveedores"}
-                {isRestricted && <span className="text-neutral-400"> (restringido por admin)</span>}
-              </span>
-              <button
+            <Card key={price.id} className="flex items-center justify-between p-3">
+              <div className="text-sm text-ink">
+                <span className="font-medium tabular-nums">
+                  {(price.amount / 100).toLocaleString("es-CO", {
+                    style: "currency",
+                    currency: price.currency,
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                  })}
+                </span>{" "}
+                <span className="text-ink-muted">
+                  ({price.interval}) — {available.map((p) => PROVIDER_LABELS[p]).join(" + ") || "sin proveedores"}
+                </span>
+                {isRestricted && (
+                  <StatusPill tone="neutral" className="ml-2">
+                    Restringido
+                  </StatusPill>
+                )}
+              </div>
+              <Button
                 type="button"
-                className="text-red-600 underline disabled:opacity-50"
+                variant="ghost"
+                size="sm"
                 disabled={removingId === price.id}
-                onClick={() => onRemove(price.id)}
+                onClick={() => setConfirmingId(price.id)}
               >
                 Quitar
-              </button>
-            </li>
+              </Button>
+            </Card>
           );
         })}
-        {prices.length === 0 && <li className="py-2 text-sm text-neutral-500">Sin precios todavía.</li>}
-      </ul>
-      {removeError && <p className="mt-1 text-sm text-red-600">{removeError}</p>}
+        {prices.length === 0 && <p className="text-sm text-ink-muted">Sin precios todavía.</p>}
+      </div>
 
-      <p className="mt-4 text-xs text-neutral-500">
+      <p className="mt-4 text-xs text-ink-muted">
         PayPal no admite precios en COP (sin conversión automática) — usá una moneda distinta a COP si querés
         ofrecer PayPal para este precio nuevo. Podés además desmarcar un proveedor compatible si no querés
         ofrecerlo para este precio en particular.
       </p>
-      <form className="mt-2 flex flex-wrap items-end gap-2" onSubmit={handleSubmit(onSubmit)}>
-        <div>
-          <label className="block text-xs font-medium">Monto (centavos)</label>
-          <input className="mt-1 w-32 rounded border px-2 py-1 text-sm" type="number" {...register("amount")} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium">Moneda</label>
-          <input className="mt-1 w-20 rounded border px-2 py-1 text-sm" {...register("currency")} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium">Tipo</label>
-          <select className="mt-1 rounded border px-2 py-1 text-sm" {...register("interval")}>
-            <option value="ONE_TIME">Pago único</option>
-            <option value="RECURRING">Recurrente</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-neutral-600">
-          {ALL_PAYMENT_PROVIDERS.map((provider) => {
-            const isCompatible = compatible.includes(provider);
-            return (
-              <label key={provider} className={`flex items-center gap-1 ${isCompatible ? "" : "opacity-40"}`}>
-                <input type="checkbox" disabled={!isCompatible} {...register(`enabled.${provider}`)} />
-                {PROVIDER_LABELS[provider]}
-              </label>
-            );
-          })}
-        </div>
-        <button
-          className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-          type="submit"
-          disabled={isSubmitting}
-        >
-          Agregar
-        </button>
-      </form>
-      {errors.amount && <p className="mt-1 text-sm text-red-600">{errors.amount.message}</p>}
-      {addError && <p className="mt-1 text-sm text-red-600">{addError}</p>}
+      <Card className="mt-2 p-3">
+        <form className="flex flex-wrap items-end gap-3" onSubmit={handleSubmit(onSubmit)}>
+          <div className="w-32">
+            <Field label="Monto (centavos)">
+              <Input type="number" {...register("amount")} />
+            </Field>
+          </div>
+          <div className="w-20">
+            <Field label="Moneda">
+              <Input {...register("currency")} />
+            </Field>
+          </div>
+          <div>
+            <Field label="Tipo">
+              <Select {...register("interval")}>
+                <option value="ONE_TIME">Pago único</option>
+                <option value="RECURRING">Recurrente</option>
+              </Select>
+            </Field>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-ink-muted">
+            {ALL_PAYMENT_PROVIDERS.map((provider) => {
+              const isCompatible = compatible.includes(provider);
+              return (
+                <label key={provider} className={`flex items-center gap-1.5 ${isCompatible ? "" : "opacity-40"}`}>
+                  <Checkbox disabled={!isCompatible} {...register(`enabled.${provider}`)} />
+                  {PROVIDER_LABELS[provider]}
+                </label>
+              );
+            })}
+          </div>
+          <Button type="submit" size="sm" disabled={isSubmitting}>
+            Agregar
+          </Button>
+        </form>
+        {errors.amount && <p className="mt-2 text-sm text-danger">{errors.amount.message}</p>}
+        {addError && <p className="mt-2 text-sm text-danger">{addError}</p>}
+      </Card>
+
+      <ConfirmDialog
+        open={confirmingId !== null}
+        title="¿Quitar este precio?"
+        description="Esta acción borra el precio de forma permanente. Si ya se usó en algún pedido, la operación se rechaza automáticamente."
+        confirmLabel="Quitar precio"
+        isLoading={removingId !== null}
+        onConfirm={onConfirmRemove}
+        onCancel={() => setConfirmingId(null)}
+      />
     </section>
   );
 }

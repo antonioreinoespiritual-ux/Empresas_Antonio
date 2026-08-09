@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import type { LandingBlock, LandingBlockType, Page } from "@repo/core/domain";
+import { Button, Card, Field, Input, Select, useToast } from "@repo/admin-ui/primitives";
 import { savePageAction } from "./actions";
 import { BlockFields } from "./block-fields";
 
@@ -73,6 +74,7 @@ function readBlocks(content: unknown): LandingBlock[] {
  * el modo JSON — cero cambios de validación o backend.
  */
 export function LandingBlocksForm({ offerId, page }: { offerId: string; page: Page | null }) {
+  const { show } = useToast();
   const [slug, setSlug] = useState(page?.slug ?? "");
   const [blocks, setBlocks] = useState<LandingBlock[]>(() => readBlocks(page?.content ?? null));
   const [addType, setAddType] = useState<LandingBlockType>("hero");
@@ -120,101 +122,83 @@ export function LandingBlocksForm({ offerId, page }: { offerId: string; page: Pa
     setIsSubmitting(true);
     const result = await savePageAction({ offerId, kind: "LANDING", slug, content: { blocks } });
     setIsSubmitting(false);
-    if (!result.ok) setError(result.error ?? "No se pudo guardar");
+    if (!result.ok) {
+      setError(result.error ?? "No se pudo guardar");
+      return;
+    }
+    show("Bloques guardados");
   }
 
   return (
-    <section className="rounded border p-4">
-      <h2 className="text-lg font-medium">Página de ventas — editor de bloques</h2>
-      <p className="mt-1 text-xs text-neutral-500">
+    <Card>
+      <h2 className="text-base font-semibold text-ink">Página de ventas — editor de bloques</h2>
+      <p className="mt-1 text-xs text-ink-muted">
         Arma la landing eligiendo, ordenando y editando bloques. Reemplaza a &quot;Página de ventas (landing)&quot; de
         arriba cuando se guarda acá: ambas escriben al mismo Page, gana la que se guardó al último.
       </p>
 
       <form className="mt-4 flex flex-col gap-4" onSubmit={onSubmit}>
-        <div>
-          <label className="block text-sm font-medium">Slug (URL)</label>
-          <input
-            className="mt-1 w-full rounded border px-3 py-2 text-sm"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-          />
-        </div>
+        <Field label="Slug (URL)">
+          <Input value={slug} onChange={(e) => setSlug(e.target.value)} />
+        </Field>
 
         <div className="flex flex-col gap-3">
           {blocks.length === 0 && (
-            <p className="rounded border border-dashed p-3 text-sm text-neutral-500">
+            <p className="rounded-md border border-dashed border-border p-3 text-sm text-ink-muted">
               Todavía no hay bloques — agrega el primero abajo.
             </p>
           )}
           {blocks.map((block, index) => (
-            <div key={index} className="rounded border p-3">
+            <div key={index} className="rounded-md border border-border p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold">
+                <span className="text-sm font-semibold text-ink">
                   {index + 1}. {BLOCK_TYPE_LABELS[block.type]}
                 </span>
                 <div className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => moveBlock(index, -1)}
-                    disabled={index === 0}
-                    aria-label="Subir bloque"
-                    className="rounded border px-2 py-1 text-xs disabled:opacity-30"
-                  >
+                  <Button type="button" variant="ghost" size="sm" onClick={() => moveBlock(index, -1)} disabled={index === 0} aria-label="Subir bloque">
                     ↑
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => moveBlock(index, 1)}
                     disabled={index === blocks.length - 1}
                     aria-label="Bajar bloque"
-                    className="rounded border px-2 py-1 text-xs disabled:opacity-30"
                   >
                     ↓
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeBlock(index)}
-                    className="rounded border border-red-300 px-2 py-1 text-xs text-red-600"
-                  >
+                  </Button>
+                  <Button type="button" variant="destructive" size="sm" onClick={() => removeBlock(index)}>
                     Eliminar
-                  </button>
+                  </Button>
                 </div>
               </div>
-              <div className="mt-3 border-t pt-3">
+              <div className="mt-3 border-t border-border pt-3">
                 <BlockFields block={block} onChange={(next) => updateBlock(index, next)} />
               </div>
             </div>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-          <select
-            className="rounded border px-2 py-1.5 text-sm"
-            value={addType}
-            onChange={(e) => setAddType(e.target.value as LandingBlockType)}
-          >
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          <Select className="w-auto" value={addType} onChange={(e) => setAddType(e.target.value as LandingBlockType)}>
             {BLOCK_TYPES.map((type) => (
               <option key={type} value={type}>
                 {BLOCK_TYPE_LABELS[type]}
               </option>
             ))}
-          </select>
-          <button type="button" onClick={addBlock} className="rounded border px-3 py-1.5 text-sm">
+          </Select>
+          <Button type="button" variant="secondary" size="sm" onClick={addBlock}>
             + Agregar bloque
-          </button>
+          </Button>
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
 
-        <button
-          className="self-start rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-          type="submit"
-          disabled={isSubmitting}
-        >
+        <Button type="submit" disabled={isSubmitting} className="self-start">
           Guardar bloques
-        </button>
+        </Button>
       </form>
-    </section>
+    </Card>
   );
 }

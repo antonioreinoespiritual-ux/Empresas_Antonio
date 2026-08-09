@@ -38,7 +38,13 @@ export default async function OffersPage() {
                 <TableCell className="break-words tabular-nums">
                   {offer.prices.map((price) => (
                     <div key={price.id}>
-                      {(price.amount / 100).toLocaleString("es-CO", { style: "currency", currency: price.currency })} (
+                      {(price.amount / 100).toLocaleString("es-CO", {
+                        style: "currency",
+                        currency: price.currency,
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2,
+                      })}{" "}
+                      (
                       {price.interval})
                     </div>
                   ))}
