@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Button } from "./Button";
 
 export interface ConfirmDialogProps {
@@ -15,10 +15,13 @@ export interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
+const FOCUSABLE_SELECTOR = "button:not(:disabled), [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
+
 /**
  * Reservado para acciones irreversibles y ya persistidas — no para borrar
  * una fila de un formulario que todavía no se guardó. Cierra con Escape o
- * clic fuera, tratados igual que "Cancelar".
+ * clic fuera, tratados igual que "Cancelar" — salvo mientras isLoading, para
+ * no perder de vista una eliminación que ya está en curso.
  */
 export function ConfirmDialog({
   open,
@@ -31,23 +34,54 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!open) return;
+
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    const focusable = dialog ? Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : [];
+    (focusable[0] ?? dialog)?.focus();
+
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onCancel();
+      if (isLoading) return;
+      if (event.key === "Escape") {
+        onCancel();
+        return;
+      }
+      if (event.key !== "Tab" || focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onCancel]);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused.current?.focus();
+    };
+  }, [open, isLoading, onCancel]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" onClick={onCancel}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+      onClick={() => !isLoading && onCancel()}
+    >
       <div
+        ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
+        tabIndex={-1}
         className="w-full max-w-sm rounded-lg bg-surface p-5 shadow-pop"
         onClick={(event) => event.stopPropagation()}
       >
