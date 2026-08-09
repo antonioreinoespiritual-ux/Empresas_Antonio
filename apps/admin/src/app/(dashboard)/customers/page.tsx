@@ -1,45 +1,49 @@
-import Link from "next/link";
 import { commerce } from "@/lib/commerce";
+import { PageHeader, Table, TableHeadCell, TableRow, TableCell, EmptyState, StatusPill, Button } from "@repo/admin-ui/primitives";
 
 export default async function CustomersPage() {
   const customers = await commerce.customers.list();
 
   return (
-    <main>
-      <h1 className="text-2xl font-semibold">Clientes</h1>
-      <table className="mt-6 w-full text-sm">
-        <thead>
-          <tr className="border-b text-left text-neutral-500">
-            <th className="py-2">Email</th>
-            <th>Nombre</th>
-            <th>Cuenta</th>
-            <th>Pedidos</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {customers.map((customer) => (
-            <tr key={customer.id} className="border-b">
-              <td className="py-2">{customer.email}</td>
-              <td>{customer.name ?? "—"}</td>
-              <td>{customer.userId ? "Con cuenta" : "Invitado"}</td>
-              <td>{customer.ordersCount}</td>
-              <td className="text-right">
-                <Link className="underline" href={`/customers/${customer.id}`}>
-                  Ver
-                </Link>
-              </td>
-            </tr>
-          ))}
-          {customers.length === 0 && (
+    <div>
+      <PageHeader title="Clientes" description="Compradores, con o sin cuenta creada." />
+
+      {customers.length === 0 ? (
+        <EmptyState title="Todavía no hay clientes" description="Los clientes aparecerán acá después de su primera compra." />
+      ) : (
+        <Table>
+          <thead>
             <tr>
-              <td className="py-4 text-neutral-500" colSpan={5}>
-                Todavía no hay clientes.
-              </td>
+              <TableHeadCell>Email</TableHeadCell>
+              <TableHeadCell>Nombre</TableHeadCell>
+              <TableHeadCell>Cuenta</TableHeadCell>
+              <TableHeadCell>Pedidos</TableHeadCell>
+              <TableHeadCell />
             </tr>
-          )}
-        </tbody>
-      </table>
-    </main>
+          </thead>
+          <tbody>
+            {customers.map((customer) => (
+              <TableRow key={customer.id}>
+                <TableCell className="font-medium">{customer.email}</TableCell>
+                <TableCell className="text-ink-muted">{customer.name ?? "—"}</TableCell>
+                <TableCell>
+                  <StatusPill tone={customer.userId ? "success" : "neutral"}>
+                    {customer.userId ? "Con cuenta" : "Invitado"}
+                  </StatusPill>
+                </TableCell>
+                <TableCell className="tabular-nums">{customer.ordersCount}</TableCell>
+                <TableCell>
+                  <div className="flex justify-end">
+                    <Button href={`/customers/${customer.id}`} variant="ghost" size="sm">
+                      Ver
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </div>
   );
 }

@@ -1,7 +1,9 @@
 import type { Config } from "tailwindcss";
+import adminUiPreset from "../../packages/admin-ui/tailwind-preset.cjs";
 
 const config: Config = {
-  content: ["./src/**/*.{ts,tsx}"],
+  presets: [adminUiPreset],
+  content: ["./src/**/*.{ts,tsx}", "../../packages/admin-ui/src/**/*.{ts,tsx}"],
   theme: {
     extend: {},
   },
