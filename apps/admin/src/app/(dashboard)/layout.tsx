@@ -1,7 +1,15 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { adminAuth } from "@repo/core/infrastructure";
+import { AppShell, Sidebar, Topbar, ToastProvider } from "@repo/admin-ui/primitives";
 import { LogoutButton } from "@/components/logout-button";
+
+const NAV_ITEMS = [
+  { label: "Pedidos", href: "/orders" },
+  { label: "Productos", href: "/products" },
+  { label: "Ofertas", href: "/offers" },
+  { label: "Clientes", href: "/customers" },
+];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await adminAuth.api.getSession({ headers: headers() });
@@ -10,22 +18,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-60 border-r px-4 py-6">
-        <nav className="flex flex-col gap-2 text-sm">
-          <a href="/orders">Pedidos</a>
-          <a href="/products">Productos</a>
-          <a href="/offers">Ofertas</a>
-          <a href="/customers">Clientes</a>
-        </nav>
-      </aside>
-      <div className="flex-1 px-8 py-6">
-        <header className="mb-6 flex items-center justify-between border-b pb-4 text-sm text-neutral-600">
-          <span>{session.user.email}</span>
-          <LogoutButton />
-        </header>
+    <ToastProvider>
+      <AppShell
+        sidebar={<Sidebar brand="Empresas Antonio" items={NAV_ITEMS} />}
+        topbar={
+          <Topbar>
+            <div className="flex items-center gap-4 text-sm text-ink-muted">
+              <span>{session.user.email}</span>
+              <LogoutButton />
+            </div>
+          </Topbar>
+        }
+      >
         {children}
-      </div>
-    </div>
+      </AppShell>
+    </ToastProvider>
   );
 }

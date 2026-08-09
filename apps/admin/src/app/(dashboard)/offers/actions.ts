@@ -18,10 +18,18 @@ export async function updateOfferAction(offerId: string, input: UpdateOfferInput
   revalidatePath(`/offers/${offerId}/edit`);
 }
 
-export async function setOfferActiveAction(offerId: string, isActive: boolean) {
+export async function setOfferActiveAction(
+  offerId: string,
+  isActive: boolean
+): Promise<{ ok: boolean; error?: string }> {
   await requireAdminSession();
-  await commerce.offers.setActive(offerId, isActive);
-  revalidatePath("/offers");
+  try {
+    await commerce.offers.setActive(offerId, isActive);
+    revalidatePath("/offers");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "No se pudo cambiar el estado de la oferta" };
+  }
 }
 
 export async function addPriceAction(offerId: string, price: CreatePriceInput) {

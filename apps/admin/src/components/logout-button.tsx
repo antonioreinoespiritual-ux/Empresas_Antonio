@@ -1,15 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Button } from "@repo/admin-ui/primitives";
 import { adminAuthClient } from "@/lib/auth-client";
 
 export function LogoutButton() {
   const router = useRouter();
 
   return (
-    <button
+    <Button
       type="button"
-      className="text-sm underline"
+      variant="ghost"
+      size="sm"
       onClick={async () => {
         await adminAuthClient.signOut();
         router.push("/login");
@@ -17,6 +19,6 @@ export function LogoutButton() {
       }}
     >
       Cerrar sesión
-    </button>
+    </Button>
   );
 }
