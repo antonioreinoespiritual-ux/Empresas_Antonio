@@ -1,13 +1,14 @@
 import { commerce } from "@/lib/commerce";
+import { PageHeader } from "@repo/admin-ui/primitives";
 import { OfferForm } from "../offer-form";
 
 export default async function NewOfferPage() {
   const products = await commerce.products.list();
 
   return (
-    <main>
-      <h1 className="text-2xl font-semibold">Nueva oferta</h1>
+    <div>
+      <PageHeader title="Nueva oferta" />
       <OfferForm products={products.map((product) => ({ id: product.id, name: product.name }))} />
-    </main>
+    </div>
   );
 }

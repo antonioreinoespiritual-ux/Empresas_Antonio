@@ -5,10 +5,15 @@ import type { CreateOfferInput, CreatePriceInput, UpdateOfferInput } from "@repo
 import { commerce } from "@/lib/commerce";
 import { requireAdminSession } from "@/lib/require-admin-session";
 
-export async function createOfferAction(input: CreateOfferInput) {
+export async function createOfferAction(input: CreateOfferInput): Promise<{ ok: boolean; error?: string }> {
   await requireAdminSession();
-  await commerce.offers.create(input);
-  revalidatePath("/offers");
+  try {
+    await commerce.offers.create(input);
+    revalidatePath("/offers");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "No se pudo crear la oferta" };
+  }
 }
 
 export async function updateOfferAction(offerId: string, input: UpdateOfferInput) {

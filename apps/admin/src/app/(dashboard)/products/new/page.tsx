@@ -1,10 +1,11 @@
+import { PageHeader } from "@repo/admin-ui/primitives";
 import { ProductForm } from "../product-form";
 
 export default function NewProductPage() {
   return (
-    <main>
-      <h1 className="text-2xl font-semibold">Nuevo producto</h1>
+    <div>
+      <PageHeader title="Nuevo producto" />
       <ProductForm />
-    </main>
+    </div>
   );
 }

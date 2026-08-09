@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Button, Card } from "@repo/admin-ui/primitives";
+import { Button, Card, Field, Input } from "@repo/admin-ui/primitives";
 import { adminAuthClient } from "@/lib/auth-client";
 
 const schema = z.object({
@@ -39,30 +39,12 @@ export default function AdminLoginPage() {
       <h1 className="mt-3 text-lg font-semibold text-ink">Acceso administradores</h1>
       <p className="mt-1 text-sm text-ink-muted">Sesión independiente de los usuarios finales.</p>
       <form className="mt-6 flex flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
-        <div>
-          <label className="block text-sm font-medium text-ink" htmlFor="email">
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            className="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            {...register("email")}
-          />
-          {errors.email && <p className="mt-1 text-sm text-danger">{errors.email.message}</p>}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-ink" htmlFor="password">
-            Contraseña
-          </label>
-          <input
-            id="password"
-            type="password"
-            className="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            {...register("password")}
-          />
-          {errors.password && <p className="mt-1 text-sm text-danger">{errors.password.message}</p>}
-        </div>
+        <Field label="Email" htmlFor="email" error={errors.email?.message}>
+          <Input id="email" type="email" invalid={!!errors.email} {...register("email")} />
+        </Field>
+        <Field label="Contraseña" htmlFor="password" error={errors.password?.message}>
+          <Input id="password" type="password" invalid={!!errors.password} {...register("password")} />
+        </Field>
         {errors.root && <p className="text-sm text-danger">{errors.root.message}</p>}
         <Button type="submit" disabled={isSubmitting} className="w-full">
           Entrar

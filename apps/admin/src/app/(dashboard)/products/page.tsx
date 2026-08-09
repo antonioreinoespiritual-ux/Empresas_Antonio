@@ -1,51 +1,61 @@
-import Link from "next/link";
 import { commerce } from "@/lib/commerce";
+import { PageHeader, Table, TableHeadCell, TableRow, TableCell, EmptyState, Button } from "@repo/admin-ui/primitives";
 import { PublishToggle } from "./publish-toggle";
+
+const TYPE_LABEL: Record<string, string> = {
+  DIGITAL: "Digital",
+  PHYSICAL: "Físico",
+  SERVICE: "Servicio",
+  SUBSCRIPTION: "Suscripción",
+};
 
 export default async function ProductsPage() {
   const products = await commerce.products.list();
 
   return (
-    <main>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Productos</h1>
-        <Link className="rounded bg-neutral-900 px-4 py-2 text-sm text-white" href="/products/new">
-          Nuevo producto
-        </Link>
-      </div>
-      <table className="mt-6 w-full text-sm">
-        <thead>
-          <tr className="border-b text-left text-neutral-500">
-            <th className="py-2">Nombre</th>
-            <th>Tipo</th>
-            <th>Estado</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {products.map((product) => (
-            <tr key={product.id} className="border-b">
-              <td className="py-2">{product.name}</td>
-              <td>{product.type}</td>
-              <td>
-                <PublishToggle productId={product.id} status={product.status} />
-              </td>
-              <td className="text-right">
-                <Link className="underline" href={`/products/${product.id}/edit`}>
-                  Editar
-                </Link>
-              </td>
-            </tr>
-          ))}
-          {products.length === 0 && (
+    <div>
+      <PageHeader
+        title="Productos"
+        description="Lo que realmente se entrega — una oferta empaqueta uno o más productos con un precio."
+        actions={<Button href="/products/new">+ Nuevo producto</Button>}
+      />
+
+      {products.length === 0 ? (
+        <EmptyState
+          title="Todavía no hay productos"
+          description="Crea el primer producto para poder empaquetarlo en una oferta."
+          action={<Button href="/products/new">+ Nuevo producto</Button>}
+        />
+      ) : (
+        <Table>
+          <thead>
             <tr>
-              <td className="py-4 text-neutral-500" colSpan={4}>
-                Todavía no hay productos.
-              </td>
+              <TableHeadCell className="w-[40%]">Nombre</TableHeadCell>
+              <TableHeadCell className="w-[24%]">Tipo</TableHeadCell>
+              <TableHeadCell className="w-[20%]">Estado</TableHeadCell>
+              <TableHeadCell className="w-[16%]" />
             </tr>
-          )}
-        </tbody>
-      </table>
-    </main>
+          </thead>
+          <tbody>
+            {products.map((product) => (
+              <TableRow key={product.id}>
+                <TableCell className="break-words font-medium">{product.name}</TableCell>
+                <TableCell className="text-ink-muted">{TYPE_LABEL[product.type] ?? product.type}</TableCell>
+                <TableCell>
+                  <PublishToggle productId={product.id} status={product.status} />
+                </TableCell>
+                <TableCell>
+                  <div className="flex justify-end">
+                    <Button href={`/products/${product.id}/edit`} variant="ghost" size="sm">
+                      Editar
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </div>
   );
 }
