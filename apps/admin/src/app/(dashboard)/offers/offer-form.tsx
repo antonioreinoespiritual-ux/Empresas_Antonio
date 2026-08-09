@@ -13,6 +13,7 @@ import {
   type PaymentProviderType,
   type ThemeId,
 } from "@repo/core/domain";
+import { Button, Card, Checkbox, Field, Input, Select, useToast } from "@repo/admin-ui/primitives";
 import { createOfferAction } from "./actions";
 
 const PROVIDER_LABELS: Record<PaymentProviderType, string> = { WOMPI: "Wompi", PAYPAL: "PayPal" };
@@ -46,6 +47,7 @@ type FormValues = z.infer<typeof schema>;
 
 export function OfferForm({ products }: { products: { id: string; name: string }[] }) {
   const router = useRouter();
+  const { show } = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
@@ -79,118 +81,124 @@ export function OfferForm({ products }: { products: { id: string; name: string }
       setSubmitError("Cada precio necesita al menos un proveedor de pago habilitado.");
       return;
     }
-    await createOfferAction({
+    const result = await createOfferAction({
       productId: values.productId,
       name: values.name,
       themeId: values.themeId,
       prices: prices.map(({ checkedCount, ...price }) => price),
     });
+    if (!result.ok) {
+      setSubmitError(result.error ?? "No se pudo crear la oferta");
+      return;
+    }
+    show("Oferta creada");
     router.push("/offers");
   }
 
   return (
     <form className="mt-6 flex max-w-xl flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
-      <div>
-        <label className="block text-sm font-medium">Producto</label>
-        <select className="mt-1 w-full rounded border px-3 py-2" {...register("productId")}>
+      <Field label="Producto" htmlFor="productId" error={errors.productId?.message}>
+        <Select id="productId" invalid={!!errors.productId} {...register("productId")}>
           <option value="">Selecciona un producto</option>
           {products.map((product) => (
             <option key={product.id} value={product.id}>
               {product.name}
             </option>
           ))}
-        </select>
-        {errors.productId && <p className="mt-1 text-sm text-red-600">{errors.productId.message}</p>}
-      </div>
+        </Select>
+      </Field>
 
-      <div>
-        <label className="block text-sm font-medium">Nombre de la oferta</label>
-        <input className="mt-1 w-full rounded border px-3 py-2" {...register("name")} />
-        {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>}
-      </div>
+      <Field label="Nombre de la oferta" htmlFor="name" error={errors.name?.message}>
+        <Input id="name" invalid={!!errors.name} {...register("name")} />
+      </Field>
 
-      <div>
-        <label className="block text-sm font-medium">Theme (piel visual de la landing/checkout)</label>
-        <select className="mt-1 w-full rounded border px-3 py-2" {...register("themeId")}>
+      <Field label="Theme (piel visual de la landing/checkout)" htmlFor="themeId">
+        <Select id="themeId" {...register("themeId")}>
           {THEME_IDS.map((id) => (
             <option key={id} value={id}>
               {THEME_LABELS[id]}
             </option>
           ))}
-        </select>
-      </div>
+        </Select>
+      </Field>
 
-      <fieldset className="rounded border p-4">
-        <legend className="text-sm font-medium">Precios</legend>
-        <p className="text-xs text-neutral-500">
+      <fieldset className="rounded-lg border border-border p-4">
+        <legend className="px-1 text-sm font-medium text-ink">Precios</legend>
+        <p className="text-xs text-ink-muted">
           La moneda define qué proveedores son técnicamente compatibles (PayPal no admite COP, sin conversión
           automática). Podés además desmarcar un proveedor compatible si no querés ofrecerlo para este precio en
           particular.
         </p>
-        {fields.map((field, index) => {
-          const currency = (watchedPrices?.[index]?.currency || "").toUpperCase();
-          const compatible = compatibleProviders(currency);
-          return (
-            <div key={field.id} className="mt-3 rounded border border-neutral-200 p-2">
-              <div className="flex items-center gap-2">
-                <input
-                  className="w-32 rounded border px-2 py-1"
-                  type="number"
-                  placeholder="Monto (centavos)"
-                  {...register(`prices.${index}.amount`)}
-                />
-                <input
-                  className="w-20 rounded border px-2 py-1"
-                  placeholder="COP"
-                  {...register(`prices.${index}.currency`)}
-                />
-                <select className="rounded border px-2 py-1" {...register(`prices.${index}.interval`)}>
-                  <option value="ONE_TIME">Pago único</option>
-                  <option value="RECURRING">Recurrente</option>
-                </select>
-                {fields.length > 1 && (
-                  <button type="button" className="text-sm text-red-600 underline" onClick={() => remove(index)}>
-                    Quitar
-                  </button>
-                )}
-              </div>
-              <div className="mt-2 flex items-center gap-3 text-xs text-neutral-600">
-                <span className="font-medium">Proveedores:</span>
-                {ALL_PAYMENT_PROVIDERS.map((provider) => {
-                  const isCompatible = compatible.includes(provider);
-                  return (
-                    <label key={provider} className={`flex items-center gap-1 ${isCompatible ? "" : "opacity-40"}`}>
-                      <input type="checkbox" disabled={!isCompatible} {...register(`prices.${index}.enabled.${provider}`)} />
-                      {PROVIDER_LABELS[provider]}
-                      {!isCompatible && " (no compatible)"}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-        <button
+        <div className="mt-3 flex flex-col gap-3">
+          {fields.map((field, index) => {
+            const currency = (watchedPrices?.[index]?.currency || "").toUpperCase();
+            const compatible = compatibleProviders(currency);
+            return (
+              <Card key={field.id} className="p-3">
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="w-32">
+                    <Field label="Monto (centavos)" htmlFor={`prices.${index}.amount`}>
+                      <Input id={`prices.${index}.amount`} type="number" {...register(`prices.${index}.amount`)} />
+                    </Field>
+                  </div>
+                  <div className="w-20">
+                    <Field label="Moneda" htmlFor={`prices.${index}.currency`}>
+                      <Input id={`prices.${index}.currency`} placeholder="COP" {...register(`prices.${index}.currency`)} />
+                    </Field>
+                  </div>
+                  <div>
+                    <Field label="Tipo" htmlFor={`prices.${index}.interval`}>
+                      <Select id={`prices.${index}.interval`} {...register(`prices.${index}.interval`)}>
+                        <option value="ONE_TIME">Pago único</option>
+                        <option value="RECURRING">Recurrente</option>
+                      </Select>
+                    </Field>
+                  </div>
+                  {fields.length > 1 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => remove(index)}>
+                      Quitar
+                    </Button>
+                  )}
+                </div>
+                <div className="mt-3 flex items-center gap-4 text-xs text-ink-muted">
+                  <span className="font-medium text-ink">Proveedores:</span>
+                  {ALL_PAYMENT_PROVIDERS.map((provider) => {
+                    const isCompatible = compatible.includes(provider);
+                    return (
+                      <label
+                        key={provider}
+                        className={`flex items-center gap-1.5 ${isCompatible ? "" : "opacity-40"}`}
+                      >
+                        <Checkbox disabled={!isCompatible} {...register(`prices.${index}.enabled.${provider}`)} />
+                        {PROVIDER_LABELS[provider]}
+                        {!isCompatible && " (no compatible)"}
+                      </label>
+                    );
+                  })}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+        <Button
           type="button"
-          className="mt-2 text-sm underline"
+          variant="ghost"
+          size="sm"
+          className="mt-3"
           onClick={() =>
             append({ amount: 0, currency: "COP", interval: "ONE_TIME", enabled: { WOMPI: true, PAYPAL: true } })
           }
         >
           + Agregar precio
-        </button>
-        {errors.prices && <p className="mt-1 text-sm text-red-600">Revisa los precios ingresados</p>}
+        </Button>
+        {errors.prices && <p className="mt-2 text-sm text-danger">Revisa los precios ingresados</p>}
       </fieldset>
 
-      {submitError && <p className="text-sm text-red-600">{submitError}</p>}
+      {submitError && <p className="text-sm text-danger">{submitError}</p>}
 
-      <button
-        className="self-start rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-        type="submit"
-        disabled={isSubmitting}
-      >
+      <Button type="submit" disabled={isSubmitting} className="self-start">
         Crear oferta
-      </button>
+      </Button>
     </form>
   );
 }

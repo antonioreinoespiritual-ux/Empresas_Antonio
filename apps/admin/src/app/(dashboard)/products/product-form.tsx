@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { Button, Field, Input, Select, useToast } from "@repo/admin-ui/primitives";
 import { createProductAction, updateProductAction } from "./actions";
 
 const schema = z.object({
@@ -15,6 +16,7 @@ type FormValues = z.infer<typeof schema>;
 
 export function ProductForm({ productId, defaultValues }: { productId?: string; defaultValues?: FormValues }) {
   const router = useRouter();
+  const { show } = useToast();
   const {
     register,
     handleSubmit,
@@ -25,37 +27,31 @@ export function ProductForm({ productId, defaultValues }: { productId?: string; 
   });
 
   async function onSubmit(values: FormValues) {
-    if (productId) {
-      await updateProductAction(productId, values);
-    } else {
-      await createProductAction(values);
+    const result = productId ? await updateProductAction(productId, values) : await createProductAction(values);
+    if (!result.ok) {
+      show(result.error ?? "No se pudo guardar el producto", "danger");
+      return;
     }
+    show(productId ? "Producto actualizado" : "Producto creado");
     router.push("/products");
   }
 
   return (
     <form className="mt-6 flex max-w-md flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
-      <div>
-        <label className="block text-sm font-medium">Nombre</label>
-        <input className="mt-1 w-full rounded border px-3 py-2" {...register("name")} />
-        {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>}
-      </div>
-      <div>
-        <label className="block text-sm font-medium">Tipo</label>
-        <select className="mt-1 w-full rounded border px-3 py-2" {...register("type")}>
+      <Field label="Nombre" htmlFor="name" error={errors.name?.message}>
+        <Input id="name" invalid={!!errors.name} {...register("name")} />
+      </Field>
+      <Field label="Tipo" htmlFor="type">
+        <Select id="type" {...register("type")}>
           <option value="DIGITAL">Digital</option>
           <option value="PHYSICAL">Físico</option>
           <option value="SERVICE">Servicio</option>
           <option value="SUBSCRIPTION">Suscripción</option>
-        </select>
-      </div>
-      <button
-        className="self-start rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-        type="submit"
-        disabled={isSubmitting}
-      >
+        </Select>
+      </Field>
+      <Button type="submit" disabled={isSubmitting} className="self-start">
         Guardar
-      </button>
+      </Button>
     </form>
   );
 }
