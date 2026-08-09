@@ -162,6 +162,11 @@ export function BlockFields({ block, onChange }: { block: LandingBlock; onChange
             <>
               <TextInput label="Título" value={item.title} onChange={(v) => update({ ...item, title: v })} />
               <TextInput label="Descripción" value={item.description} onChange={(v) => update({ ...item, description: v })} />
+              <TextInput
+                label="Ícono (opcional, un emoji)"
+                value={item.icon ?? ""}
+                onChange={(v) => update({ ...item, icon: v || undefined })}
+              />
             </>
           )}
         />
@@ -182,6 +187,11 @@ export function BlockFields({ block, onChange }: { block: LandingBlock; onChange
                 label="Rol (opcional)"
                 value={item.authorRole ?? ""}
                 onChange={(v) => update({ ...item, authorRole: v || undefined })}
+              />
+              <TextInput
+                label="URL de foto (opcional)"
+                value={item.avatarUrl ?? ""}
+                onChange={(v) => update({ ...item, avatarUrl: v || undefined })}
               />
             </>
           )}
@@ -208,6 +218,11 @@ export function BlockFields({ block, onChange }: { block: LandingBlock; onChange
         <div className="flex flex-col gap-2">
           <TextInput label="Título" value={block.title} onChange={(v) => onChange({ ...block, title: v })} />
           <TextArea label="Descripción" value={block.description} onChange={(v) => onChange({ ...block, description: v })} />
+          <TextInput
+            label="Ícono del sello (opcional, un emoji)"
+            value={block.badgeIcon ?? ""}
+            onChange={(v) => onChange({ ...block, badgeIcon: v || undefined })}
+          />
         </div>
       );
     case "cta":
