@@ -36,6 +36,13 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  // Vía ref para que el efecto de abajo solo se re-arme al abrir/cerrar el
+  // diálogo, nunca al cambiar isLoading o al recrearse onCancel en cada
+  // render del padre — si no, el atrapado de foco se desmontaba y volvía a
+  // montar justo cuando isLoading pasaba a true, dejando un instante sin
+  // trampa de Tab (el bug real que esto reemplaza).
+  const latest = useRef({ isLoading, onCancel });
+  latest.current = { isLoading, onCancel };
 
   useEffect(() => {
     if (!open) return;
@@ -46,18 +53,29 @@ export function ConfirmDialog({
     (focusable[0] ?? dialog)?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
-      if (isLoading) return;
       if (event.key === "Escape") {
-        onCancel();
+        if (!latest.current.isLoading) latest.current.onCancel();
         return;
       }
-      if (event.key !== "Tab" || focusable.length === 0) return;
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
+      if (event.key !== "Tab" || !dialog) return;
+      // Se recalcula en cada Tab, no una sola vez al abrir: durante
+      // isLoading ambos botones quedan disabled, así que la lista de
+      // focusables cambia de tamaño mientras el diálogo sigue abierto.
+      const current = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      if (current.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = current[0]!;
+      const last = current[current.length - 1]!;
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (!dialog.contains(document.activeElement)) {
         event.preventDefault();
         first.focus();
       }
@@ -67,7 +85,7 @@ export function ConfirmDialog({
       document.removeEventListener("keydown", onKeyDown);
       previouslyFocused.current?.focus();
     };
-  }, [open, isLoading, onCancel]);
+  }, [open]);
 
   if (!open) return null;
 
