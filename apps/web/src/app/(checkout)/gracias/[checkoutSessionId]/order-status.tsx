@@ -28,10 +28,10 @@ export function OrderStatus({ checkoutSessionId }: { checkoutSessionId: string }
   }, [checkoutSessionId]);
 
   if (status === "PAID") {
-    return <p className="mt-4 font-medium text-green-700">¡Pago confirmado!</p>;
+    return <p className="mt-4 font-medium text-success">¡Pago confirmado!</p>;
   }
   if (status === "CANCELLED") {
-    return <p className="mt-4 font-medium text-red-700">El pago no se pudo procesar.</p>;
+    return <p className="mt-4 font-medium text-destructive">El pago no se pudo procesar.</p>;
   }
-  return <p className="mt-4 text-neutral-600">Procesando tu pago…</p>;
+  return <p className="mt-4 text-foreground-muted">Procesando tu pago…</p>;
 }

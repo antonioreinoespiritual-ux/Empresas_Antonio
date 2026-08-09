@@ -4,6 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { Button, Card, FormField, Stack, Text } from "@repo/ui/primitives";
+import type { Theme } from "@repo/ui/themes";
 import { startCheckoutAction } from "./actions";
 import { openWompiWidget } from "@/lib/wompi-widget";
 import { getAvailableProviders, isProviderCompatibleWithCurrency, type PaymentProviderType } from "@repo/core/domain";
@@ -29,7 +31,17 @@ const PROVIDER_LABELS: Record<PaymentProviderType, string> = {
   PAYPAL: "Pagar con PayPal",
 };
 
-export function CheckoutForm({ offerId, prices }: { offerId: string; prices: PriceOption[] }) {
+export function CheckoutForm({
+  offerId,
+  prices,
+  buttonPreset,
+  cardPreset,
+}: {
+  offerId: string;
+  prices: PriceOption[];
+  buttonPreset: Theme["buttonPreset"];
+  cardPreset: Theme["cardPreset"];
+}) {
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
@@ -100,48 +112,59 @@ export function CheckoutForm({ offerId, prices }: { offerId: string; prices: Pri
   }
 
   return (
-    <form className="mt-6 flex flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
-      <div>
-        <label className="block text-sm font-medium">Email</label>
-        <input className="mt-1 w-full rounded border px-3 py-2" type="email" {...register("guestEmail")} />
-        {errors.guestEmail && <p className="mt-1 text-sm text-red-600">{errors.guestEmail.message}</p>}
-      </div>
+    <Card cardPreset={cardPreset} className="mt-6">
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <Stack gap="md">
+          <FormField
+            label="Email"
+            type="email"
+            error={errors.guestEmail?.message}
+            {...register("guestEmail")}
+          />
 
-      {prices.length > 1 && (
-        <fieldset>
-          <legend className="text-sm font-medium">Precio</legend>
-          {prices.map((price) => (
-            <label key={price.id} className="mt-1 flex items-center gap-2 text-sm">
-              <input type="radio" value={price.id} {...register("priceId")} />
-              {(price.amount / 100).toLocaleString("es-CO", { style: "currency", currency: price.currency })} (
-              {price.interval})
-            </label>
-          ))}
-        </fieldset>
-      )}
+          {prices.length > 1 && (
+            <fieldset>
+              <legend className="text-sm font-medium text-foreground">Precio</legend>
+              <Stack gap="xs" className="mt-1.5">
+                {prices.map((price) => (
+                  <label key={price.id} className="flex items-center gap-2 text-sm text-foreground">
+                    <input type="radio" className="accent-primary" value={price.id} {...register("priceId")} />
+                    {(price.amount / 100).toLocaleString("es-CO", { style: "currency", currency: price.currency })} (
+                    {price.interval})
+                  </label>
+                ))}
+              </Stack>
+            </fieldset>
+          )}
 
-      <fieldset>
-        <legend className="text-sm font-medium">Método de pago</legend>
-        {availableProviders.map((provider) => (
-          <label key={provider} className="mt-1 flex items-center gap-2 text-sm">
-            <input type="radio" value={provider} {...register("provider")} />
-            {PROVIDER_LABELS[provider]}
-          </label>
-        ))}
-        {selectedPrice && !isProviderCompatibleWithCurrency("PAYPAL", selectedPrice.currency) && (
-          <p className="mt-1 text-xs text-neutral-500">PayPal no está disponible para precios en COP.</p>
-        )}
-      </fieldset>
+          <fieldset>
+            <legend className="text-sm font-medium text-foreground">Método de pago</legend>
+            <Stack gap="xs" className="mt-1.5">
+              {availableProviders.map((provider) => (
+                <label key={provider} className="flex items-center gap-2 text-sm text-foreground">
+                  <input type="radio" className="accent-primary" value={provider} {...register("provider")} />
+                  {PROVIDER_LABELS[provider]}
+                </label>
+              ))}
+            </Stack>
+            {selectedPrice && !isProviderCompatibleWithCurrency("PAYPAL", selectedPrice.currency) && (
+              <Text size="sm" tone="muted" className="mt-1.5">
+                PayPal no está disponible para precios en COP.
+              </Text>
+            )}
+          </fieldset>
 
-      {serverError && <p className="text-sm text-red-600">{serverError}</p>}
+          {serverError && (
+            <Text size="sm" className="text-destructive">
+              {serverError}
+            </Text>
+          )}
 
-      <button
-        className="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
-        type="submit"
-        disabled={isSubmitting}
-      >
-        Continuar
-      </button>
-    </form>
+          <Button type="submit" disabled={isSubmitting} buttonPreset={buttonPreset} className="w-full">
+            Continuar
+          </Button>
+        </Stack>
+      </form>
+    </Card>
   );
 }
