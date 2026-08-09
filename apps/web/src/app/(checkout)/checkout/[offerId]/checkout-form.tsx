@@ -35,10 +35,12 @@ export function CheckoutForm({
   offerId,
   prices,
   buttonPreset,
+  cardPreset,
 }: {
   offerId: string;
   prices: PriceOption[];
   buttonPreset: Theme["buttonPreset"];
+  cardPreset: Theme["cardPreset"];
 }) {
   const [serverError, setServerError] = useState<string | null>(null);
   const {
@@ -110,7 +112,7 @@ export function CheckoutForm({
   }
 
   return (
-    <Card cardPreset="flat-border" className="mt-6">
+    <Card cardPreset={cardPreset} className="mt-6">
       <form onSubmit={handleSubmit(onSubmit)}>
         <Stack gap="md">
           <FormField

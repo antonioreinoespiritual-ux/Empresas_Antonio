@@ -29,7 +29,12 @@ export default async function CheckoutPage({ params }: { params: { offerId: stri
         <Container width="content">
           <Heading as="h1">{content?.headline || offer.name}</Heading>
           {content?.subheadline && <Text className="mt-2">{content.subheadline}</Text>}
-          <CheckoutForm offerId={offer.id} prices={offer.prices} buttonPreset={theme.buttonPreset} />
+          <CheckoutForm
+            offerId={offer.id}
+            prices={offer.prices}
+            buttonPreset={theme.buttonPreset}
+            cardPreset={theme.cardPreset}
+          />
         </Container>
       </Section>
     </ThemeProvider>
