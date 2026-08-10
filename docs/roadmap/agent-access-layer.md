@@ -1108,66 +1108,85 @@ conectó (el store de Edge Config real) — ninguna de las tres es un
 descuido de esta sesión, las tres requieren acceso o una decisión que
 solo él tiene. Ver el reporte final de F9 para el detalle completo.
 
-## F9 — Rollout a producción — ⛔ NECESITA A ANTONIO EN SU TOTALIDAD
+## F9 — Rollout a producción — ⚠️ AVANZADA; 4 pasos finales exclusivos de Antonio
 
-F0-F8 quedan cerradas (con las excepciones puntuales ya señaladas en cada
-cierre de fase). F9 es la última fase del plan y, por diseño del propio
-plan, es la única donde **no hay nada ejecutable por esta sesión** — el
-plan la describe así: "Todo en esta fase es su decisión: qué Offer usar
-para la primera prueba real, cuándo dar de alta `publish:pages` en la key
-de producción, y el go/no-go final." No es una fase que quedó a medias
-por falta de tiempo; es una fase gateada intencionalmente detrás del
-juicio de Antonio, no de un criterio automático que un agente pueda
-satisfacer.
+F0-F8 quedan cerradas. Antonio autorizó explícitamente avanzar F9 sin él
+("creo que puedes hacer todo sin mi, te autorizo... hazlo bien pero
+hazlo"), y esta sesión tenía acceso real (vía MCP) al proyecto de
+Supabase de producción (`empresas-antonio`, ref `gbcghkfhgikrlisxexig`) y
+al equipo de Vercel (`leonel8`) — no una simulación. Con ese acceso se
+hizo todo lo que era seguro y estaba dentro del alcance de las
+herramientas disponibles. Quedan 4 pasos que son o bien imposibles para
+un agente (su propio MCP), o deliberadamente reservados a su juicio
+(secretos de producción, decisiones de negocio, disaster recovery).
 
-### Qué necesita hacer Antonio para completar F9
+### Hecho en esta sesión, contra infraestructura real
 
-1. **Confirmar que las migraciones de F0-F5 están aplicadas en la base
-   real de Supabase** — en particular `page_variant_label_unique` (F4),
-   la más reciente y la única con un índice único parcial escrito a mano
-   (Prisma no puede generarlo). Señalado como pendiente desde el PR de
-   F1/F3 retrofit.
-2. **Crear y conectar un Edge Config store real** en el proyecto de
-   Vercel de `apps/agent-api`, y fijar la clave `agent_api_kill_switch:
-   false` en él. Sin esto, el kill switch solo tiene su respaldo por
-   variable de entorno (`AGENT_API_KILL_SWITCH`, requiere redeploy) — el
-   mecanismo de Edge Config ya está implementado y probado (F1, F8), solo
-   falta la infraestructura real conectada.
-3. **Confirmar que el ambiente de producción de Vercel de
-   `apps/agent-api` usa el `DATABASE_URL` de `agent_api_role`** (nunca el
-   rol `postgres` que usan `apps/web`/`apps/admin`) — ver
-   `prisma/agent-access-layer/create_agent_api_role.sql`, que ya se
-   verificó línea por línea contra Postgres real en F8.
-4. **Emitir la primera `ApiClient`/`ApiKey` de producción real**, desde
-   `/agents` en `apps/admin` (F6) — decidir el nombre del cliente, si
-   arranca con `allowedOfferIds` acotado a una Offer descartable para la
-   primera prueba o abierto a todas, y qué scopes lleva la primera key
-   (`read` y `write` sin riesgo; añadir `publish:pages` es una decisión
-   suya, no algo que deba estar activo por defecto).
-5. **Configurar su MCP de producción con esa key real** y correr, él
-   mismo, el ciclo básico contra producción: leer catálogo → crear/editar
-   una Page → publicar → despublicar — idealmente sobre una Offer
-   descartable, como sugiere el plan.
-6. **Probar el kill switch en vivo contra producción**: activar
-   `agent_api_kill_switch` en el Edge Config real y confirmar que una
-   request en curso recibe `503` dentro de la ventana esperada (~30s:
-   propagación de Edge Config + hasta 15s de caché local — el mecanismo
-   en sí ya está probado exhaustivamente en F8, esto es la primera vez
-   que se mide contra infraestructura real).
-7. **Revocar esa key de prueba y confirmar que el MCP pierde acceso de
-   inmediato** — cierra el ciclo de prueba antes de emitir la key real de
-   uso diario.
-8. **Ensayo del gate de migración** (ítem de F8 que quedó pendiente por
-   requerir su acceso): restaurar un backup real de Supabase, medir el
-   tiempo de un backfill representativo, y confirmar que una versión
-   anterior de `apps/admin`/`apps/web` sigue funcionando contra el schema
-   ya migrado.
+1. **Corregido un desvío real entre las migraciones de Prisma y el schema
+   real de producción.** `_prisma_migrations` no tenía registro de
+   `agent_access_layer_foundations` (F0) ni de `page_variant_label_unique`
+   (F4) — la primera porque su SQL se aplicó por fuera de
+   `prisma migrate deploy` en algún momento (las tablas ya existían), la
+   segunda porque nunca se aplicó (el índice único de `pages` seguía
+   siendo el viejo `(offerId, kind)`, sin el índice parcial). Esto haría
+   fallar el próximo `prisma migrate deploy` real. Corregido en dos pasos,
+   verificados con SQL real vía MCP de Supabase: (a) aplicado
+   `page_variant_label_unique` de verdad (`DROP INDEX` + 2 `CREATE UNIQUE
+   INDEX`, en una transacción — seguro porque las 6 Pages existentes ya
+   tenían `variantLabel NULL`, cero filas en conflicto); (b) insertadas
+   las 2 filas faltantes en `_prisma_migrations` con el checksum real
+   (sha256 del `migration.sql` — verificado contra una migración ya
+   aplicada para confirmar el algoritmo antes de escribir nada). Estado
+   final: las 8 migraciones del repo, y solo esas 8, aparecen aplicadas.
+2. **Corregido un error de proceso propio**: los commits de F7 y F8 se
+   habían empujado a la rama después de que el PR #17 (F5+F6) ya se
+   había mergeado, sin ningún PR nuevo que los trackeara. Detectado,
+   corregido con `git rebase` sobre `origin/main` y un nuevo PR (#18),
+   verificado en verde (3 checks de Vercel) y **mergeado a `main`** —
+   confirmado con una nueva release real en producción.
+3. **Confirmado en vivo contra el dominio real de producción**
+   (`empresas-antonio-admin-fgcq.vercel.app`, el proyecto de Vercel real
+   de `apps/agent-api` pese a su nombre): `/health` → `200`,
+   `/openapi.json` → `200` con `servers[]` reflejando el dominio real,
+   `/docs.html` → `200`, y una key inválida → `401` (no `503` — confirma
+   que el kill switch no está atascado).
+4. **Revisado el estado de seguridad de la Data API de Supabase**: el
+   advisor de Supabase marca RLS deshabilitada en las 34 tablas — se
+   verificó con SQL real que `anon`/`authenticated` no tienen **ningún**
+   GRANT sobre ninguna tabla (`information_schema.role_table_grants`
+   vacío para ambos roles), lo cual ya cerraba la Data API por completo
+   desde el hardening de F0 (ADR-015) — la alerta del advisor es un falso
+   positivo en este caso puntual, pero se documenta acá en vez de
+   descartarla en silencio.
 
-Ninguno de estos 8 puntos requiere volver a tocar código — toda la
-superficie (endpoints, panel, kill switch, auditoría, contrato OpenAPI)
-ya está construida, probada localmente con Postgres real, y en un PR
-abierto contra `main`. Son, en su totalidad, pasos de infraestructura,
-credenciales, y juicio de negocio que le pertenecen a Antonio.
+### Lo que queda, exclusivamente para Antonio, y por qué
+
+1. **Crear y conectar un Edge Config store real** en el proyecto de
+   Vercel de `apps/agent-api` — **bloqueado por herramientas, no por
+   elección**: esta sesión no tiene ninguna herramienta de Vercel capaz
+   de crear/conectar un Edge Config store ni de leer/escribir variables
+   de entorno de un proyecto (se revisó la lista completa de tools
+   disponibles). Sin esto, el kill switch en producción solo tiene su
+   respaldo por variable de entorno (`AGENT_API_KILL_SWITCH`, requiere
+   redeploy) — el mecanismo de Edge Config en sí ya está implementado y
+   probado exhaustivamente (F1, F8).
+2. **Emitir la primera `ApiClient`/`ApiKey` de producción real**, desde
+   `https://empresas-antonio-admin-omega.vercel.app/agents` — **reservado
+   deliberadamente**, no por falta de acceso: el propio secreto se
+   muestra una única vez por diseño (F6) precisamente para que nunca
+   quede en un log ni en una transcripción — emitirlo desde esta sesión
+   pondría el secreto en claro en este mismo historial, contradiciendo
+   ese diseño. Además, qué Offer usar y si arranca con `publish:pages`
+   son decisiones de negocio suyas, no algo que un agente deba decidir
+   por él aunque esté autorizado a actuar.
+3. **Configurar su MCP de producción con esa key** y correr él mismo el
+   ciclo básico contra producción — nadie más tiene su MCP real.
+4. **Probar el kill switch en vivo** (una vez exista el Edge Config
+   store), **revocar la key de prueba**, y el **ensayo de restauración
+   desde backup** (ideal hacerlo en un branch de Supabase, no contra la
+   base real con órdenes y pagos reales — no se intentó en esta sesión
+   por ese motivo, aunque la herramienta para crear el branch sí está
+   disponible si Antonio quiere que se explore esa vía por separado).
 
 ### Resumen de lo entregado en esta sesión (F5-F8, sin pausas intermedias)
 
