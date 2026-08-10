@@ -10,6 +10,8 @@ import { authenticateIncomingRequest, checkRateLimit, denialStatusCode, recordAg
 // `--scopes read,write` (manage-agent-clients.mjs) según lo que necesite.
 export const READ_SCOPE = "read";
 export const WRITE_SCOPE = "write";
+/** F5 — publicar/despublicar/emitir preview. Deliberadamente distinto de "write": una key puede editar contenido sin poder publicarlo. */
+export const PUBLISH_SCOPE = "publish:pages";
 
 interface RequireAgentAccessParams {
   request: Request;
@@ -134,6 +136,17 @@ export function requireAgentWrite(params: {
   offerId?: string;
 }): Promise<RequireAgentAccessResult> {
   return requireAgentAccess({ ...params, scope: WRITE_SCOPE, isWrite: true });
+}
+
+export function requireAgentPublish(params: {
+  request: Request;
+  method: string;
+  resourceType: string;
+  routeKey: string;
+  rateLimit: { limit: number; windowMs: number };
+  offerId?: string;
+}): Promise<RequireAgentAccessResult> {
+  return requireAgentAccess({ ...params, scope: PUBLISH_SCOPE, isWrite: true });
 }
 
 /** Respuesta uniforme (headers de F1/F2) para las rutas de apps/agent-api. */

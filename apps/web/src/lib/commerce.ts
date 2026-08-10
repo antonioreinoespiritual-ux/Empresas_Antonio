@@ -1,4 +1,5 @@
 import {
+  NodeApiKeyHasher,
   PrismaCustomerRepository,
   PrismaOfferRepository,
   PrismaCheckoutSessionRepository,
@@ -7,6 +8,7 @@ import {
   PrismaEntitlementRepository,
   PrismaWebhookEventRepository,
   PrismaPageRepository,
+  PrismaPreviewTokenRepository,
   WompiPaymentProvider,
   PayPalPaymentProvider,
 } from "@repo/core/infrastructure";
@@ -39,5 +41,9 @@ export const commerce = {
   entitlements: new PrismaEntitlementRepository(),
   webhookEvents: new PrismaWebhookEventRepository(),
   pages: new PrismaPageRepository(),
+  // F5 — verificar el PreviewToken de /preview/[token]. Mismo hasher que
+  // ApiKey/PreviewToken en apps/agent-api (SHA-256 + timingSafeEqual).
+  previewTokens: new PrismaPreviewTokenRepository(),
+  previewTokenHasher: new NodeApiKeyHasher(),
   providers,
 };

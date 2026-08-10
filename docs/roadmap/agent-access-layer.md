@@ -756,5 +756,81 @@ direccionables + variantes). Pendientes explícitos, ninguno bloqueante para
 el código ya desplegable:
 - Aplicar la migración `page_variant_label_unique` a producción.
 - Crear y conectar el Edge Config store en Vercel.
-- F5 (publicación y preview), F6 (panel admin), F7 (OpenAPI/contrato MCP),
-  F8 (verificación integral) y F9 (rollout a producción) — sin empezar.
+
+## F5 — Publicación y preview — ✅ CERRADA (2026-08-10)
+
+Por instrucción explícita de Antonio ("avanzá hasta la fase final del plan,
+implementalo todo rigurosamente... hazlo todo tú, sin preguntar"), esta
+sesión continuó directamente hacia F5-F9 sin gate intermedio de aprobación
+por fase — cada fase se construye con el mismo rigor de pruebas que F1-F4
+(pipeline completo + smoke test real contra Postgres local antes de cada
+commit), pero sin pausar a pedir confirmación entre una y la siguiente.
+
+### Qué se construyó
+
+- **`PreviewToken`** (`packages/core/src/domain/agent-access/preview-token.entity.ts`):
+  mismo split público/secreto que `ApiKey` — `tokenId` indexado (no
+  secreto) + `secretHash` (nunca el secreto en claro). Reusa el mismo
+  `ApiKeyHasher` (SHA-256 + `timingSafeEqual`) — el secreto ya tiene la
+  misma alta entropía, no hace falta una clase de hashing nueva.
+- **`PreviewTokenRepository.createReplacingActive()`**: revoca (nunca
+  `DELETE`, por trazabilidad) cualquier token vigente de la misma Page
+  antes de crear el nuevo, en una sola transacción — nunca coexisten dos
+  tokens vigentes para una Page. Los GRANTs de `agent_api_role` sobre
+  `preview_tokens` (`SELECT, INSERT, UPDATE`) ya existían desde F0,
+  anticipando exactamente esta fase.
+- **`createPreviewToken`/`verifyPreviewToken`** (use-cases): `verifyPreviewToken`
+  nunca distingue "token inexistente" de "secreto incorrecto" en la
+  respuesta — mismo criterio anti-enumeración que `authenticateAgentRequest`.
+- **Tercer scope real**: `PUBLISH_SCOPE = "publish:pages"`, deliberadamente
+  distinto de `"write"` — una key puede editar contenido sin poder
+  publicarlo. `requireAgentPublish` en `apps/agent-api/src/lib/require-agent-access.ts`.
+- **`POST /pages/:id/publish`, `/unpublish`**: idempotentes por diseño
+  (publicar dos veces es un no-op `200`, no un error) — usan el nuevo
+  `PageRepository.setStatusAudited()` (audit atómico en la misma
+  transacción, igual que `updateWithVersionAudited`; `setStatus` sin
+  auditar queda para el panel humano, F6).
+- **`POST /pages/:id/preview`**: funciona sin importar el `status` de la
+  Page (a diferencia de publish/unpublish) — devuelve `previewUrl` +
+  `expiresAt`. TTL 24h (arbitrario, documentado igual que otros TTL de este
+  repo).
+- **`apps/web/src/app/preview/[token]/page.tsx`**: reusa exactamente el
+  mismo motor de render que `/[slug]` — extraído a un componente compartido
+  (`LandingPageView`) para no duplicar el JSX entre ambas rutas.
+- **Headers de seguridad vía `middleware.ts`** (no vía `Metadata` — un
+  `page.tsx` de App Router no puede fijar headers HTTP reales):
+  `Cache-Control: no-store`, `X-Robots-Tag: noindex`,
+  `Referrer-Policy: no-referrer`. El hash del secreto protege contra una
+  fuga de base de datos, no contra la URL en sí (puede quedar en logs de
+  acceso o en un header `Referer`) — por eso TTL corto + revocación al
+  emitir uno nuevo + estos headers, ninguno solo.
+
+### Verificación
+
+Mismo entorno que F1-F4 (Postgres 16 local, migraciones aplicadas, base
+descartada al terminar). `packages/core`: **121/121 tests verdes, 7
+skipped, sin regresiones**. Smoke test HTTP real contra ambas apps
+(`apps/agent-api` + `apps/web`) corriendo en local:
+
+| Caso | Resultado |
+|---|---|
+| `POST publish` con key sin `publish:pages` | `403 missing_scope` |
+| `POST preview` con la Page en `DRAFT` (antes de publicar) | `201`, funciona igual |
+| `POST publish` | `200`, `status` pasa a `PUBLISHED` |
+| `POST publish` de nuevo | `200` no-op, mismo body, no error |
+| `POST unpublish` | `200`, `status` vuelve a `DRAFT` |
+| `GET /preview/:token` en `apps/web` real | `200`, headers `Cache-Control: no-store`, `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer` confirmados, contenido del bloque `hero` renderizado |
+| Token de preview inválido | `404` |
+| Emitir un segundo preview de la misma Page | El primer token queda revocado (`404` al usarlo), el segundo funciona (`200`) |
+
+`pnpm run boundaries`, `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r build`
+en verde en los 7 workspaces — 17 rutas en `apps/agent-api`, `/preview/[token]`
+nueva en `apps/web`.
+
+### Declaración de cierre
+
+**F5 queda formalmente cerrada el 2026-08-10.** Ciclo agentic completo
+demostrable de punta a punta: leer catálogo (F3) → crear/editar contenido
+con bloques y variantes (F4) → preview → publicar/despublicar (F5) — sin
+ninguna intervención de código ni de base de datos fuera de las rutas HTTP
+ya construidas.

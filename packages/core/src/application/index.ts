@@ -17,6 +17,7 @@ export * from "./agent-access/ports/agent-audit-log-repository.port";
 export * from "./agent-access/ports/api-key-crypto.port";
 export * from "./agent-access/ports/rate-limit-repository.port";
 export * from "./agent-access/ports/idempotency-repository.port";
+export * from "./agent-access/ports/preview-token-repository.port";
 
 export * from "./payments/use-cases/prepare-checkout-payment.use-case";
 export * from "./payments/use-cases/process-provider-webhook.use-case";
@@ -28,3 +29,5 @@ export * from "./agent-access/use-cases/issue-api-key.use-case";
 export * from "./agent-access/use-cases/enforce-rate-limit.use-case";
 export * from "./agent-access/use-cases/with-idempotency.use-case";
 export * from "./agent-access/use-cases/execute-agent-page-update.use-case";
+export * from "./agent-access/use-cases/create-preview-token.use-case";
+export * from "./agent-access/use-cases/verify-preview-token.use-case";

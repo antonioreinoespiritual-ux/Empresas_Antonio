@@ -13,6 +13,7 @@ export * from "./prisma/repositories/api-key.repository";
 export * from "./prisma/repositories/agent-audit-log.repository";
 export * from "./prisma/repositories/rate-limit-bucket.repository";
 export * from "./prisma/repositories/idempotency-record.repository";
+export * from "./prisma/repositories/preview-token.repository";
 export * from "./agent-access/api-key-crypto";
 export * from "./agent-access/request-hash";
 
