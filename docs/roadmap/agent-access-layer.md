@@ -204,7 +204,7 @@ una key estructuralmente válida una vez puede auto-diagnosticar su propio
 estado sin necesitar soporte; es el mismo criterio que usan Stripe/GitHub
 para sus API keys.
 
-### Cierre operativo de F1 — ⏳ en curso (2026-08-10)
+### Cierre operativo de F1 — ✅ CERRADA (2026-08-10)
 
 Auditoría de esta misma sesión: `apps/agent-api` **nunca se había
 desplegado a Vercel** — solo existían `empresas-antonio-admin` y
@@ -232,14 +232,54 @@ Avance de esta sesión:
    crear un proyecto de Vercel enlazado a git ni para configurar sus
    variables de entorno**; ese paso de dashboard es exclusivamente manual.
 
-**Pendiente, bloqueado en un paso humano**: crear el proyecto en Vercel y
-pegar las env vars. En cuanto esté desplegado, correr `GET
-/internal/role-check` con el token, confirmar `connectedAs.current_user =
-"agent_api_role"` y `deniedTableCheck.ok = false` (permission denied) +
-`allowedTableCheck.ok = true`, borrar la ruta y este pendiente pasa a
-cerrado. Hasta entonces, F1 queda cerrada **técnicamente** (código,
-pruebas, pipeline) pero no **operacionalmente** (nadie confirmó el
-aislamiento en producción real).
+**Resuelto.** Antonio creó el proyecto de Vercel (`empresas-antonio-admin-fgcq`,
+root directory `apps/agent-api`) desde el dashboard, siguiendo git (auto-deploy
+en cada push a `main`, igual que los otros dos proyectos). Dos problemas de
+configuración encontrados y corregidos antes de la verificación real:
+
+1. **Framework Preset no persistía en el dashboard** (`framework: null` vía
+   API pese a seleccionar "Next.js" y guardar) → build fallaba con `No Output
+   Directory named "public" found` (Vercel esperaba un build estático). Fix a
+   nivel de código, no de dashboard: `apps/agent-api/vercel.json` con
+   `{"framework": "nextjs"}`, para que no vuelva a depender de un click en la
+   UI.
+2. **`DATABASE_URL`/`DIRECT_URL` apuntaban al rol `postgres`** (connection
+   string default de Supabase, credenciales además inválidas) en vez de
+   `agent_api_role` → `PrismaClientInitializationError` en runtime. Corregido
+   con el formato correcto de Supavisor (transaction pooler) para un rol que
+   no es `postgres`: el project ref va como sufijo del usuario —
+   `agent_api_role.<project_ref>@aws-0-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true`
+   (`?pgbouncer=true` desactiva prepared statements, obligatorio en modo
+   transacción).
+
+Verificación real contra el deployment de producción (`GET
+/internal/role-check` con el token, antes de borrar la ruta):
+
+```json
+{
+  "connectedAs": {"current_user": "agent_api_role", "session_user": "agent_api_role"},
+  "allowedTableCheck": {"table": "products", "ok": true},
+  "deniedTableCheck": {"table": "admin_users", "ok": false, "error": "...permission denied for table admin_users"}
+}
+```
+
+Confirmado con las cuatro combinaciones esperadas: `GET /health` → `200`;
+`/internal/role-check` sin token → `404`; con token incorrecto → `404`; con
+token correcto → `200` con el resultado de arriba. El aislamiento de
+`agent_api_role` es real en producción, no solo en el SQL: lee donde hay
+GRANT, Postgres rechaza donde no lo hay (`42501 permission denied`), y la
+ruta de diagnóstico está oculta por defecto para cualquiera sin el token.
+
+Ruta `GET /internal/role-check` y variable `AGENT_API_ROLE_CHECK_TOKEN`
+**eliminadas** del código (`apps/agent-api/src/app/internal/`) y de
+`.env.example` inmediatamente después de esta verificación — pendiente que
+Antonio quite también el valor de `AGENT_API_ROLE_CHECK_TOKEN` del proyecto
+de Vercel (dashboard) y redespliegue; con la ruta ya borrada del código, ese
+valor queda inerte de todas formas.
+
+Con esto, F1 queda cerrada tanto **técnicamente** (código, pruebas,
+pipeline) como **operacionalmente** (aislamiento de `agent_api_role`
+confirmado en producción real).
 
 **Decisión explícita (2026-08-10, instrucción de Antonio)**: no se vuelve
 a rotar la password de `agent_api_role` en esta etapa — se usa la ya
@@ -269,13 +309,14 @@ Access Layer, sin importar qué fase esté vigente en ese momento:
   conversación — cualquier secreto que haya existido en un canal de chat,
   sin importar cuán acotada la exposición, se considera de un-nivel de
   confianza distinto al de un secreto que nace directo en el gestor).
-- [ ] **Eliminar (no solo deshabilitar) toda ruta y variable de diagnóstico
+- [x] **Eliminar (no solo deshabilitar) toda ruta y variable de diagnóstico
   temporal**: `GET /internal/role-check`
   (`apps/agent-api/src/app/internal/role-check/route.ts`) y
-  `AGENT_API_ROLE_CHECK_TOKEN`. Confirmar con un `grep` del árbol de
-  `apps/agent-api` que no queda ninguna ruta bajo `internal/`.
-  Ver el cierre operativo de F1 más abajo — se aplica en cuanto la prueba
-  positiva/negativa quede demostrada, no se espera hasta este gate final.
+  `AGENT_API_ROLE_CHECK_TOKEN`. Hecho el 2026-08-10, inmediatamente después
+  de la prueba positiva/negativa contra producción — ver el cierre
+  operativo de F1 más abajo. Pendiente solo que Antonio quite el valor
+  residual de `AGENT_API_ROLE_CHECK_TOKEN` del dashboard de Vercel (inerte
+  sin la ruta, pero conviene no dejarlo).
 - [ ] **Auditar variables de entorno de los 3 proyectos de Vercel**
   (`empresas-antonio-admin`, `empresas-antonio-web`, y el de
   `apps/agent-api` una vez creado) buscando cualquier valor de
