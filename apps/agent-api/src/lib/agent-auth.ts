@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { authenticateAgentRequest, enforceRateLimit } from "@repo/core/application";
 import { RateLimitExceededError, type AgentAccessDenialReason } from "@repo/core/domain";
 import { agentAccess } from "./agent-access";
+import { isKillSwitchEngaged } from "./kill-switch";
 
 const DENIAL_STATUS_CODE: Record<AgentAccessDenialReason, number> = {
   kill_switch_engaged: 503,
@@ -31,9 +32,11 @@ export function resolveRequestId(request: Request): string {
 
 /**
  * Punto único de autenticación para rutas de apps/agent-api. Kill switch
- * global vía AGENT_API_KILL_SWITCH — leído acá (infraestructura/app), nunca
- * dentro de application/domain, para que authenticateAgentRequest siga
- * siendo puro/testeable sin variables de entorno.
+ * global vía Edge Config + env var de respaldo (ver kill-switch.ts) —
+ * leído acá (infraestructura/app), nunca dentro de application/domain, para
+ * que authenticateAgentRequest siga siendo puro/testeable sin depender de
+ * Edge Config ni de variables de entorno. Se evalúa antes que cualquier
+ * llamada a Prisma dentro de authenticateAgentRequest.
  */
 export async function authenticateIncomingRequest(authorizationHeader: string | null) {
   const result = await authenticateAgentRequest(
@@ -41,7 +44,7 @@ export async function authenticateIncomingRequest(authorizationHeader: string | 
     {
       authorizationHeader,
       now: new Date(),
-      killSwitchEngaged: process.env.AGENT_API_KILL_SWITCH === "true",
+      killSwitchEngaged: await isKillSwitchEngaged(),
     }
   );
   return { result };

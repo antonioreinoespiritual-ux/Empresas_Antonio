@@ -534,7 +534,7 @@ los 7 workspaces después de todos los cambios — `apps/agent-api` build final
 con las 7 rutas: `/health`, `/whoami`, `/products`, `/products/[id]`,
 `/offers`, `/offers/[id]`, `/pages`.
 
-### Declaración de cierre
+### Declaración de cierre (superada por el retrofit de abajo)
 
 **F3 queda formalmente cerrada el 2026-08-10.** Lectura de catálogo completa
 (Products, Offers con Prices, Pages) disponible para cualquier agente
@@ -542,3 +542,219 @@ autenticado con scope `read`, sin restricción por Offer, verificada con
 datos reales contra Postgres — no solo con mocks. No se implementó ninguna
 escritura agentic (F4) ni paginación (sin precedente en el repo, se agrega
 si el volumen lo justifica).
+
+## Retrofit de F1/F3 y cierre de F4 — 2026-08-10
+
+Esta sesión encontró que el plan completo de fases (`PLAN-AGENT-API-01`, 10
+fases F0→F9, "Plan aprobado" con correcciones de kill switch/rol de
+Postgres/auditoría transaccional/gate de migración) existía versionado en
+un documento que esta sesión no tenía en contexto — la nota de procedencia
+al inicio de este archivo ya advertía que ese plan "nunca se versionó como
+documento en este repositorio". Al recibirlo, se encontraron desvíos reales
+entre lo ya construido (F1/F3, arriba) y el plan aprobado. Antonio decidió
+corregir todo para que coincida con el plan, y construir F4 con su alcance
+completo (no la versión simplificada que se había planeado inicialmente).
+
+### Desvíos corregidos
+
+| Punto | Plan aprobado | Antes de este retrofit |
+|---|---|---|
+| Prefijo de rutas | `/api/v1/agent/*` | Rutas en la raíz (`/whoami`, `/products`, etc.) |
+| `allowedOfferIds` en lectura | Debe respetarse ("confirmado por Antonio" en el plan) | Sin restricción (instrucción distinta dada en esta misma sesión, antes de ver el plan) |
+| Endpoints de F3 | `/products`, `/offers`, `/themes`, `/block-types`, `/pages` | Faltaban `/themes` y `/block-types` |
+| Paginación | Cursor obligatorio | No implementada |
+| Kill switch | Vercel Edge Config (primario) + env var (respaldo) | Solo env var |
+
+**Rutas** movidas a `apps/agent-api/src/app/api/v1/agent/*` (`/health` queda
+en la raíz, es infraestructura de F0, no de negocio).
+
+**`allowedOfferIds` en lectura**: `authorizeAgentAction` ya soportaba el
+parámetro `offerId` desde F1 (nunca se usaba desde una ruta HTTP hasta
+ahora). `/offers/:id` y `/pages` (con `offerId` explícito) lo llaman antes
+de tocar la base → `403 offer_not_allowed`. Las listas (`/offers`,
+`/products`) filtran en la propia query SQL vía nuevos métodos
+`listForAgent()` en `OfferRepository`/`ProductRepository` (`list()` sigue
+intacto para `apps/admin`, patrón ya usado en F1/F2: variante nueva junto a
+la existente, nunca modificar la que ya tiene consumidores). **Decisión de
+diseño para `Product`**: no tiene un `offerId` único (relación 1-a-muchos
+con `Offer`) — un Product es visible si tiene *al menos una* Offer dentro
+de `allowedOfferIds`; fuera de alcance → `404` (no `403`, no hay un único
+`offerId` que negar, y no se confirma su existencia a quien no tiene
+acceso). Mismo criterio de "404 sobre 403 cuando no hay un solo offerId que
+evaluar" se aplicó a `GET/PATCH /pages/:id` y a los endpoints de bloques —
+`offerId` no se conoce hasta leer la Page por su propio `id`.
+
+**`/themes`, `/block-types`**: catálogos estáticos (sin Postgres), igual
+autenticados/auditados que cualquier otra ruta. `/themes` expone
+`THEME_IDS` (dominio, ya existente). `/block-types` expone un catálogo
+nuevo (`packages/core/src/domain/content/block-type-catalog.ts`) — describe
+a mano los 8 tipos de bloque de `landingBlockSchema` (`hero`, `vsl`,
+`benefits`, `testimonials`, `faq`, `guarantee`, `cta`, `richText`) para que
+un agente sepa qué campos requiere cada uno antes de intentar crearlo (F4),
+sin tener que adivinar el schema Zod.
+
+**Paginación**: cursor-based (`?cursor=<id>&limit=<n>`, default 20, tope
+100) en `/products`, `/offers`, `/pages`. Nuevo tipo compartido
+`PaginatedResult<T>`/`CursorPaginationInput`
+(`packages/core/src/application/shared/paginated-result.ts`).
+
+**Kill switch vía Vercel Edge Config**: `apps/agent-api/src/lib/kill-switch.ts`
+— señal primaria en Edge Config (clave `agent_api_kill_switch: boolean`),
+caché en memoria por instancia (TTL 15s), **fail-closed** (si la lectura
+falla, se trata como activado — sin excepción por caché previo). Env var
+(`AGENT_API_KILL_SWITCH`) sigue como respaldo de último recurso, en OR.
+**Pendiente de un paso de Antonio**: crear el Edge Config store en el
+dashboard de Vercel y conectarlo al proyecto (fija automáticamente la env
+var `EDGE_CONFIG`) — sin eso, el código cae al comportamiento anterior
+(solo env var) sin romper nada, simplemente sin la señal de baja latencia.
+
+### F4 — Escritura de Pages (alcance completo del plan) — ✅ CERRADA
+
+Segundo consumidor real de `ApiKey.scopes` (después de `read` en F3):
+`WRITE_SCOPE = "write"`. `authorizeAgentAction(principal, {scope, isWrite,
+offerId})` ahora se llama con `isWrite: true` — `forceReadOnly` bloquea
+cualquiera de estos endpoints aunque la key tenga el scope, sin excepción.
+
+**Endpoints** (todos bajo `/api/v1/agent/pages`):
+
+| Ruta | Verbo | Qué hace |
+|---|---|---|
+| `/pages` | `POST` | Crea una Page nueva (`Idempotency-Key` requerido) |
+| `/pages/:id` | `PATCH` | Reemplaza el `content` completo, CAS vía `If-Match` |
+| `/pages/:id/blocks` | `POST` | Agrega un bloque (solo Pages `LANDING`) |
+| `/pages/:id/blocks/:blockId` | `PATCH` | Edita un bloque por su `id` estable (F0) |
+| `/pages/:id/blocks/:blockId` | `DELETE` | Elimina un bloque |
+| `/pages/:id/reorder` | `POST` | Reordena los bloques existentes |
+| `/pages/:id/variants` | `POST` | Crea una variante A/B |
+
+**`Idempotency-Key` en todas, no solo en `POST /pages`**: el plan solo lo
+menciona explícito para la creación, pero `executeAgentPageWrite` (F2) ya
+lo exige siempre — se decidió exigirlo en todo el camino de escritura por
+consistencia, no dejar un endpoint sin esa protección solo porque el plan
+no lo mencionó ahí.
+
+**`If-Match`** transporta la `version` esperada (CAS, ETag-style) — falta →
+`428 Precondition Required`. Reutiliza el mecanismo de F2
+(`updateWithVersionAudited`) sin cambios de fondo; `executeAgentPageUpdate`
+se renombró a **`executeAgentPageWrite`** y ahora decide crear vs.
+actualizar según si el llamador trae `expectedVersion` (mismo criterio que
+ya usaba `savePageContent` para el panel humano) — antes (F2) solo sabía
+actualizar.
+
+**Operaciones de bloque** (`packages/core/src/domain/content/block-operations.ts`):
+`addBlockToContent`, `updateBlockInContent`, `removeBlockFromContent`,
+`reorderBlocksInContent` — funciones puras sobre `LandingBlock[]`, sin I/O.
+Las rutas HTTP leen la Page actual, aplican la transformación pura, y
+persisten el resultado a través del mismo `executeAgentPageWrite` de
+arriba (ninguna operación de bloque tiene su propio mecanismo de
+rate-limit/idempotencia/CAS — todas reusan el único que ya existía).
+`updateBlockInContent` no permite cambiar el `type` de un bloque vía patch
+(mezclar campos de dos tipos produciría una forma inválida) — es
+removeBlock + addBlock, explícito. Contenido resultante siempre revalidado
+por el schema Zod completo antes de persistir (`parsePageContent`) —
+**hallazgo corregido en el camino**: esa validación podía lanzar `ZodError`
+sin capturar fuera de `executeAgentPageWrite` (defecto preexistente desde
+F2, nadie lo había notado porque F2 nunca tenía una ruta HTTP real
+llamándolo) — ahora se traduce a `400 invalid_content` centralizado ahí,
+beneficia a todos los llamadores.
+
+#### Migración de esquema: variantes A/B reales
+
+El `@@unique([offerId, kind])` original (F0) impedía, a nivel de base de
+datos, que existiera una segunda Page para la misma Offer+kind — ni
+siquiera como variante. `variantGroupId`/`variantLabel` existían desde F0
+pero "preparado, sin implementar". Antonio aprobó migrar
+(`prisma/migrations/20260810183836_page_variant_label_unique/`):
+
+- `@@unique([offerId, kind, variantLabel])` (declarativo en Prisma) — cierra
+  el caso de dos variantes con el mismo label para la misma Offer+kind.
+  **Insuficiente por sí solo**: en SQL estándar NULL nunca es igual a NULL,
+  así que este constraint no evita dos Pages "primarias" (`variantLabel`
+  NULL) para la misma Offer+kind.
+- Índice único parcial agregado a mano (Prisma no puede expresar índices
+  parciales declarativamente): `CREATE UNIQUE INDEX ...  ON "pages"("offerId", "kind") WHERE "variantLabel" IS NULL` — cierra ese caso, garantiza como
+  máximo una primaria.
+- **Aditiva sobre datos existentes**: toda fila de `pages` en producción
+  tiene hoy `variantLabel` NULL (nunca se usó), así que el índice parcial
+  es, en este momento, exactamente equivalente al constraint que reemplaza
+  — cero cambio de comportamiento para filas existentes.
+- Verificado con inserts SQL directos contra Postgres local: segunda
+  primaria → rechazada; dos variantes con labels distintos → ambas
+  aceptadas; variante con label duplicado → rechazada.
+- **Pendiente**: aplicar esta migración a la base real de Supabase
+  (`gbcghkfhgikrlisxexig`) antes de que `/pages/:id/variants` funcione en
+  producción — el código ya está desplegable, pero la migración es un paso
+  separado (igual que toda migración de este repo, nunca corre sola desde
+  el build de Vercel).
+
+#### Hallazgo corregido durante la implementación — encontrado con un smoke test real, no en el compilador
+
+Habilitar variantes rompió una asunción implícita: `updateWithVersion`/
+`updateWithVersionAudited` (F2) direccionaban la fila a actualizar solo por
+`(offerId, kind)` — válido mientras esa pareja identificaba una única fila.
+Con variantes, puede haber una primaria y N variantes para la misma
+Offer+kind, así que ese `WHERE` quedó ambiguo. Un smoke test real contra
+Postgres lo expuso de inmediato: un `PATCH` dirigido explícitamente a una
+variante por su `:id` terminó modificando la Page **primaria** en su lugar
+(las rutas nuevas nunca pasaban `variantLabel` a `performAgentPageWrite`,
+que por lo tanto defaulteaba a `null` = primaria, sin importar cuál `:id`
+pedía el llamador).
+
+Corregido en dos capas:
+1. `UpdatePageWithVersionInput`/`CreatePageInput` (puerto) ganan
+   `variantLabel`/`variantGroupId`; el `WHERE` de las dos actualizaciones
+   ahora incluye `AND "variantLabel" IS NOT DISTINCT FROM $N` (comparación
+   null-safe — un `=` normal nunca es true contra NULL).
+2. Las 4 rutas que direccionan una Page por `:id` (`PATCH /pages/:id`,
+   `POST/PATCH/DELETE .../blocks[/:blockId]`, `POST .../reorder`) ahora
+   pasan `variantLabel: page.variantLabel` explícitamente.
+
+Reproducido y confirmado el fix con el mismo smoke test: `PATCH` sobre una
+variante ya modifica solo esa fila; la primaria queda intacta.
+
+### Verificación
+
+Mismo entorno que F1/F2/F3 (Postgres 16 local, no producción; las 8
+migraciones existentes — incluyendo la nueva — aplicadas, base descartada
+al terminar). `packages/core`: **121/121 tests verdes, 7 skipped, sin
+regresiones** (ninguna prueba existente se modificó salvo el rename
+`executeAgentPageUpdate` → `executeAgentPageWrite`).
+
+Smoke test HTTP real end-to-end, con datos y credenciales reales, dos
+rondas (retrofit F3 + F4, y luego re-verificación tras el fix de
+variantes):
+
+| Caso | Resultado |
+|---|---|
+| `GET /offers` con `allowedOfferIds` acotado | Solo la Offer permitida, nunca la prohibida |
+| `GET /offers/:id` sobre una Offer fuera de alcance | `403 offer_not_allowed` |
+| `GET /themes`, `GET /block-types` | `200`, catálogos completos |
+| `GET /products?limit=1` | `200`, `nextCursor` presente/`null` según corresponda |
+| `POST /pages` con key sin scope `write` | `403 missing_scope` |
+| `POST /pages` sin `Idempotency-Key` | `400 missing_idempotency_key` |
+| `POST /pages` sobre Offer fuera de alcance | `403 offer_not_allowed` |
+| `POST /pages` (offerId, kind) ya existente | `409` (`ConflictError`) |
+| Reintento con la misma `Idempotency-Key` + mismo payload | Mismo resultado cacheado, no duplica |
+| `POST/PATCH/DELETE` de bloques sin `If-Match` | `428 missing_if_match` |
+| `If-Match` con `version` vieja | `409` (`VersionConflictError`) |
+| Ciclo completo: crear → agregar bloque → editar bloque → reordenar → eliminar bloque → `PATCH` de content completo | Cada paso `200`/`201`, `version` incrementa exactamente 1 por paso, estado final consistente |
+| `POST /pages/:id/variants` (label nuevo) | `201`, nueva Page con mismo `offerId`+`kind`, `variantGroupId` propio |
+| `POST /pages/:id/variants` (label duplicado) | `409` |
+| `PATCH`/`POST blocks` sobre una variante (tras el fix) | Modifica solo esa fila — primaria y otras variantes intactas |
+
+`pnpm run boundaries` (84 módulos, 214 dependencias, sin violaciones),
+`pnpm -r typecheck`, `pnpm -r lint` y `pnpm -r build` en verde en los 7
+workspaces — `apps/agent-api` build final con 14 rutas.
+
+### Declaración de cierre
+
+**El retrofit de F1/F3 y F4 quedan formalmente cerrados el 2026-08-10**,
+alineados con `PLAN-AGENT-API-01` (rutas `/api/v1/agent/*`,
+`allowedOfferIds` en lectura y escritura, `/themes`+`/block-types`,
+paginación, kill switch con Edge Config, escritura de Pages con bloques
+direccionables + variantes). Pendientes explícitos, ninguno bloqueante para
+el código ya desplegable:
+- Aplicar la migración `page_variant_label_unique` a producción.
+- Crear y conectar el Edge Config store en Vercel.
+- F5 (publicación y preview), F6 (panel admin), F7 (OpenAPI/contrato MCP),
+  F8 (verificación integral) y F9 (rollout a producción) — sin empezar.

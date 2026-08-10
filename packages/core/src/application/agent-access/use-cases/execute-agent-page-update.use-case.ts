@@ -1,17 +1,18 @@
-import { parsePageContent, VersionConflictError, type Page, type PageKind } from "../../../domain";
+import { ZodError } from "zod";
+import { ConflictError, parsePageContent, VersionConflictError, type Page, type PageKind } from "../../../domain";
 import type { PageRepository } from "../../content/ports/page-repository.port";
 import type { RateLimitRepository } from "../ports/rate-limit-repository.port";
 import type { IdempotencyRepository } from "../ports/idempotency-repository.port";
 import { enforceRateLimit } from "./enforce-rate-limit.use-case";
 import { withIdempotency } from "./with-idempotency.use-case";
 
-export interface ExecuteAgentPageUpdateDeps {
+export interface ExecuteAgentPageWriteDeps {
   pages: PageRepository;
   rateLimits: RateLimitRepository;
   idempotency: IdempotencyRepository;
 }
 
-export interface ExecuteAgentPageUpdateInput {
+export interface ExecuteAgentPageWriteInput {
   requestId: string;
   apiClientId: string;
   apiKeyId: string;
@@ -25,45 +26,49 @@ export interface ExecuteAgentPageUpdateInput {
     kind: PageKind;
     slug?: string | null;
     content: unknown;
-    expectedVersion: number;
+    /** undefined = crear (createInitialAudited); definida = actualizar con CAS (updateWithVersionAudited). */
+    expectedVersion?: number;
+    /** Ambos presentes = crear/actualizar una variante A/B en vez de la Page primaria (F4). */
+    variantGroupId?: string | null;
+    variantLabel?: string | null;
   };
 }
 
-export interface AgentPageUpdateBody {
+export interface AgentPageWriteBody {
   page?: Page;
   error?: string;
 }
 
 /**
  * Infraestructura transversal de F2 (rate limit + idempotencia + CAS +
- * auditoría atómica) sobre la única mutación de negocio que el Agent
- * Access Layer necesita hasta ahora: escribir Page.content. Ninguna ruta
- * HTTP de apps/agent-api llama a esto todavía — expone el mecanismo listo
- * para que F4 ("escritura agentic") lo use vía un endpoint real, sin
- * adelantar esa fase.
+ * auditoría atómica) sobre la mutación de negocio que el Agent Access Layer
+ * necesita: crear o escribir Page.content (F4 — "escritura agentic"). Antes
+ * (F2) solo soportaba actualizar; ahora decide crear vs. actualizar según si
+ * el llamador trae `expectedVersion` — mismo criterio que `savePageContent`
+ * usa para el panel humano.
  *
  * Orden deliberado: el rate limit se aplica ANTES de la idempotencia (una
  * request que ya no tiene cupo ni siquiera reserva una Idempotency-Key), y
- * el conflicto de versión se modela como {status:409,...} dentro de
- * `execute`, nunca como excepción — así también queda cacheado si la misma
- * key+payload se reintenta.
+ * tanto el conflicto de versión como el de creación duplicada se modelan
+ * como {status:409,...} dentro de `execute`, nunca como excepción — así
+ * también quedan cacheados si la misma key+payload se reintenta.
  */
-export async function executeAgentPageUpdate(
-  deps: ExecuteAgentPageUpdateDeps,
-  input: ExecuteAgentPageUpdateInput
-): Promise<{ status: number; body: AgentPageUpdateBody; executed: boolean }> {
+export async function executeAgentPageWrite(
+  deps: ExecuteAgentPageWriteDeps,
+  input: ExecuteAgentPageWriteInput
+): Promise<{ status: number; body: AgentPageWriteBody; executed: boolean }> {
   await enforceRateLimit(
     { rateLimits: deps.rateLimits },
     {
       apiKeyId: input.apiKeyId,
-      routeKey: "pages:update",
+      routeKey: "pages:write",
       limit: input.rateLimit.limit,
       windowMs: input.rateLimit.windowMs,
       now: input.now,
     }
   );
 
-  return withIdempotency<AgentPageUpdateBody>(
+  return withIdempotency<AgentPageWriteBody>(
     { idempotency: deps.idempotency },
     {
       apiClientId: input.apiClientId,
@@ -73,7 +78,42 @@ export async function executeAgentPageUpdate(
       now: input.now,
     },
     async () => {
-      const content = parsePageContent(input.page.kind, input.page.content);
+      let content: unknown;
+      try {
+        content = parsePageContent(input.page.kind, input.page.content);
+      } catch (error) {
+        // Antes de este fix (F4) esta excepción se colaba sin capturar fuera
+        // de executeAgentPageWrite — cada ruta HTTP la traduce igual a 400,
+        // así que se centraliza acá una sola vez para todos los llamadores.
+        if (error instanceof ZodError) {
+          return { status: 400, body: { error: "invalid_content", detail: error.message } };
+        }
+        throw error;
+      }
+      const audit = { requestId: input.requestId, apiClientId: input.apiClientId, apiKeyId: input.apiKeyId };
+
+      if (input.page.expectedVersion === undefined) {
+        try {
+          const page = await deps.pages.createInitialAudited(
+            {
+              offerId: input.page.offerId,
+              kind: input.page.kind,
+              slug: input.page.slug,
+              content,
+              variantGroupId: input.page.variantGroupId,
+              variantLabel: input.page.variantLabel,
+            },
+            audit
+          );
+          return { status: 201, body: { page } };
+        } catch (error) {
+          if (error instanceof ConflictError) {
+            return { status: 409, body: { error: error.message } };
+          }
+          throw error;
+        }
+      }
+
       try {
         const page = await deps.pages.updateWithVersionAudited(
           {
@@ -82,8 +122,9 @@ export async function executeAgentPageUpdate(
             slug: input.page.slug,
             content,
             expectedVersion: input.page.expectedVersion,
+            variantLabel: input.page.variantLabel,
           },
-          { requestId: input.requestId, apiClientId: input.apiClientId, apiKeyId: input.apiKeyId }
+          audit
         );
         return { status: 200, body: { page } };
       } catch (error) {

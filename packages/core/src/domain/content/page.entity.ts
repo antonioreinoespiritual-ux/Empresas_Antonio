@@ -13,4 +13,10 @@ export interface Page {
   // repositorio, no de esta entidad; acá solo se expone el valor actual.
   version: number;
   updatedAt: Date;
+  // Variantes A/B (F4 — escritura agentic). Ambas null = Page primaria.
+  // Presentes = una variante — ver migración page_variant_label_unique
+  // (compound unique (offerId, kind, variantLabel) + índice parcial que
+  // garantiza como máximo una primaria por (offerId, kind)).
+  variantGroupId: string | null;
+  variantLabel: string | null;
 }

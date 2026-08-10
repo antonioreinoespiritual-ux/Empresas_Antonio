@@ -11,6 +11,8 @@ export * from "./commerce/order.entity";
 export * from "./commerce/entitlement.entity";
 export * from "./content/page.entity";
 export * from "./content/page-content";
+export * from "./content/block-operations";
+export * from "./content/block-type-catalog";
 export * from "./content/theme-id";
 export * from "./shared/domain-error";
 export * from "./agent-access/api-client.entity";
