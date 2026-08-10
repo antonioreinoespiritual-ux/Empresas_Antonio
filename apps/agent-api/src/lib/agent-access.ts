@@ -5,7 +5,9 @@ import {
   PrismaApiClientRepository,
   PrismaApiKeyRepository,
   PrismaIdempotencyRecordRepository,
+  PrismaOfferRepository,
   PrismaPageRepository,
+  PrismaProductRepository,
   PrismaRateLimitBucketRepository,
 } from "@repo/core/infrastructure";
 
@@ -36,4 +38,11 @@ export const agentAccess = {
   rateLimits: new PrismaRateLimitBucketRepository(),
   idempotency: new PrismaIdempotencyRecordRepository(),
   pages: new PrismaPageRepository(),
+  // F3 — lectura de catálogo. agent_api_role tiene solo SELECT sobre estas
+  // tres tablas (create_agent_api_role.sql) — los métodos de escritura de
+  // estas clases existen porque implementan el puerto completo, igual que
+  // ya pasa con apiClients/apiKeys, pero Postgres los rechaza si algo los
+  // llamara por error desde acá.
+  products: new PrismaProductRepository(),
+  offers: new PrismaOfferRepository(),
 };
