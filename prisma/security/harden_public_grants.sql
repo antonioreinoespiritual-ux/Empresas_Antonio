@@ -29,23 +29,56 @@
 -- Ver también: prueba HTTP directa con la anon key contra /rest/v1/ —
 -- antes: 200/201 en products, users, payments; después: 401 en las tres.
 
--- 1) Revocar los privilegios heredados sobre las tablas EXISTENTES.
+-- Auditoría de pg_default_acl (2026-08-10) confirmó que hoy no existe
+-- ninguna sequence ni function propia en public (Prisma usa cuid() de
+-- aplicación, no serial de Postgres; no hay stored procedures). Es decir:
+-- no hay ningún GRANT existente que revocar en esas dos categorías, pero
+-- el default sí las expone -- la primera sequence/función que se cree
+-- (por ejemplo, si una extensión de Supabase alguna vez instala algo en
+-- public en vez de en su propio schema) nacería otra vez abierta si no se
+-- corrige el default también ahí. Ninguna de las dos tiene caso de uso
+-- real para anon/authenticated en este proyecto -- se revoca todo.
+
+-- 1) Revocar los privilegios heredados sobre los objetos EXISTENTES.
+--    ALL (no solo SELECT/INSERT/UPDATE/DELETE) para no dejar colgado
+--    TRUNCATE/REFERENCES/TRIGGER, aunque PostgREST no los use directamente.
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;
 
--- 2) Corregir el default de Supabase para que las tablas FUTURAS (creadas
---    por cualquier migración de Prisma, que corre como rol postgres) NO
---    nazcan otorgando acceso a anon/authenticated. Sin este paso, la
---    próxima `prisma migrate deploy` vuelve a exponer la tabla nueva —
---    exactamente lo que pasó con las 6 tablas del Agent Access Layer (F0)
---    al aplicarse sin este fix.
+-- 2) Corregir el default de Supabase para que los objetos FUTUROS
+--    (creados por cualquier migración de Prisma, que corre como rol
+--    postgres) NO nazcan otorgando acceso a anon/authenticated. Sin este
+--    paso, la próxima `prisma migrate deploy` vuelve a exponer lo que
+--    cree -- exactamente lo que pasó con las 6 tablas del Agent Access
+--    Layer (F0) al aplicarse sin este fix.
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
-  REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM anon, authenticated;
+  REVOKE ALL ON TABLES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE ALL ON FUNCTIONS FROM anon, authenticated;
 
--- Nota deliberada: service_role conserva sus GRANTs, tanto en tablas
--- existentes como en el default de tablas futuras. service_role es la
+-- 3) Postgres otorga EXECUTE a la pseudo-rol PUBLIC (es decir, a *cualquier*
+--    rol, incluidos anon/authenticated vía su membresía implícita en
+--    PUBLIC) sobre toda función nueva, por comportamiento propio del
+--    motor -- independiente de lo otorgado/revocado arriba por rol
+--    explícito. Sin esta línea, una función futura creada por postgres en
+--    public seguiría siendo ejecutable por anon/authenticated a través de
+--    PUBLIC aunque el paso 2 ya les revocó el EXECUTE nominal.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
+-- Nota deliberada: service_role conserva sus GRANTs, tanto en objetos
+-- existentes como en el default de objetos futuros. service_role es la
 -- identidad de confianza que Supabase reserva para uso server-side (Edge
 -- Functions, dashboard, integraciones futuras); hoy no se usa en este
 -- proyecto, pero tocarla queda fuera del alcance decidido para este
 -- cambio. Si se deshabilita el Data API del proyecto por completo (paso
 -- manual, ver arriba), este matiz deja de tener cualquier efecto práctico
 -- para los tres roles.
+--
+-- También deliberado: no se toca el default ACL de role supabase_admin
+-- (Supabase también lo define aparte del de postgres). Nuestras
+-- migraciones siempre corren como postgres; supabase_admin es interno de
+-- la plataforma y no tenemos un caso de uso propio que justifique tocarlo.
