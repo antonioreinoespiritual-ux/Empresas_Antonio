@@ -31,27 +31,31 @@ const BLOCK_TYPE_LABELS: Record<LandingBlockType, string> = {
 };
 
 function defaultBlockFor(type: LandingBlockType): LandingBlock {
+  // id requerido por el dominio (ADR-04): lo asigna el admin al crear el
+  // bloque, igual que lo hará cualquier escritura vía Agent Access Layer.
+  const id = crypto.randomUUID();
   switch (type) {
     case "hero":
-      return { type: "hero", title: "Título de tu oferta", subtitle: "Subtítulo breve", ctaLabel: "Comprar ahora" };
+      return { type: "hero", id, title: "Título de tu oferta", subtitle: "Subtítulo breve", ctaLabel: "Comprar ahora" };
     case "vsl":
-      return { type: "vsl", embedUrl: "https://", autoplay: false };
+      return { type: "vsl", id, embedUrl: "https://", autoplay: false };
     case "benefits":
-      return { type: "benefits", heading: "Qué incluye", items: [{ title: "Beneficio 1", description: "" }] };
+      return { type: "benefits", id, heading: "Qué incluye", items: [{ title: "Beneficio 1", description: "" }] };
     case "testimonials":
       return {
         type: "testimonials",
+        id,
         heading: "Lo que dicen nuestros clientes",
         items: [{ quote: "", authorName: "" }],
       };
     case "faq":
-      return { type: "faq", heading: "Preguntas frecuentes", items: [{ question: "", answer: "" }] };
+      return { type: "faq", id, heading: "Preguntas frecuentes", items: [{ question: "", answer: "" }] };
     case "guarantee":
-      return { type: "guarantee", title: "Garantía", description: "" };
+      return { type: "guarantee", id, title: "Garantía", description: "" };
     case "cta":
-      return { type: "cta", headline: "¿Listo para empezar?", buttonLabel: "Comprar ahora" };
+      return { type: "cta", id, headline: "¿Listo para empezar?", buttonLabel: "Comprar ahora" };
     case "richText":
-      return { type: "richText", html: "" };
+      return { type: "richText", id, html: "" };
     default: {
       const exhaustive: never = type;
       throw new Error(`Tipo de bloque desconocido: ${exhaustive}`);

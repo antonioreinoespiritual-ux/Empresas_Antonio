@@ -14,8 +14,14 @@ import type { PageKind } from "./page.entity";
 // libre de la página completa (richText es la única excepción deliberada,
 // acotada a un fragmento de copy suelto, igual de confiable que cualquier
 // otro campo hoy: solo lo escribe un admin autenticado).
+// id: identificador estable del bloque dentro de content.blocks[], requerido
+// para que el Agent Access Layer pueda direccionar operaciones (editar/mover/
+// eliminar un bloque puntual) sin depender de su posición en el array
+// (ADR-04). Los bloques existentes en producción se completan con un script
+// de backfill antes de que este campo pase a ser obligatorio en runtime.
 const heroBlockSchema = z.object({
   type: z.literal("hero"),
+  id: z.string().min(1),
   title: z.string().min(1),
   subtitle: z.string().optional(),
   backgroundImageUrl: z.string().url().optional(),
@@ -24,6 +30,7 @@ const heroBlockSchema = z.object({
 
 const vslBlockSchema = z.object({
   type: z.literal("vsl"),
+  id: z.string().min(1),
   embedUrl: z.string().url(),
   posterImageUrl: z.string().url().optional(),
   autoplay: z.boolean().default(false),
@@ -31,6 +38,7 @@ const vslBlockSchema = z.object({
 
 const benefitsBlockSchema = z.object({
   type: z.literal("benefits"),
+  id: z.string().min(1),
   heading: z.string().optional(),
   items: z
     .array(z.object({ icon: z.string().optional(), title: z.string().min(1), description: z.string().default("") }))
@@ -39,6 +47,7 @@ const benefitsBlockSchema = z.object({
 
 const testimonialsBlockSchema = z.object({
   type: z.literal("testimonials"),
+  id: z.string().min(1),
   heading: z.string().optional(),
   items: z
     .array(
@@ -54,12 +63,14 @@ const testimonialsBlockSchema = z.object({
 
 const faqBlockSchema = z.object({
   type: z.literal("faq"),
+  id: z.string().min(1),
   heading: z.string().optional(),
   items: z.array(z.object({ question: z.string().min(1), answer: z.string().min(1) })).min(1),
 });
 
 const guaranteeBlockSchema = z.object({
   type: z.literal("guarantee"),
+  id: z.string().min(1),
   title: z.string().min(1),
   description: z.string().default(""),
   badgeIcon: z.string().optional(),
@@ -67,6 +78,7 @@ const guaranteeBlockSchema = z.object({
 
 const ctaBlockSchema = z.object({
   type: z.literal("cta"),
+  id: z.string().min(1),
   headline: z.string().optional(),
   subtext: z.string().optional(),
   buttonLabel: z.string().min(1).default("Comprar ahora"),
@@ -74,6 +86,7 @@ const ctaBlockSchema = z.object({
 
 const richTextBlockSchema = z.object({
   type: z.literal("richText"),
+  id: z.string().min(1),
   html: z.string().min(1),
 });
 
@@ -137,14 +150,23 @@ export function toLandingBlocks(content: LandingPageContent): LandingBlock[] {
   if ("blocks" in content) {
     return content.blocks;
   }
+  // ids fijos y deterministas (no crypto.randomUUID()): esta proyección corre
+  // en cada lectura, y un id que cambiara entre llamadas rompería cualquier
+  // referencia a un bloque puntual tomada en una lectura anterior.
   const blocks: LandingBlock[] = [
-    { type: "hero", title: content.heroTitle, subtitle: content.heroSubtitle || undefined, ctaLabel: content.ctaLabel },
+    {
+      type: "hero",
+      id: "legacy-hero",
+      title: content.heroTitle,
+      subtitle: content.heroSubtitle || undefined,
+      ctaLabel: content.ctaLabel,
+    },
   ];
   if (content.vslEmbedUrl) {
-    blocks.push({ type: "vsl", embedUrl: content.vslEmbedUrl, autoplay: false });
+    blocks.push({ type: "vsl", id: "legacy-vsl", embedUrl: content.vslEmbedUrl, autoplay: false });
   }
   if (content.bodyHtml) {
-    blocks.push({ type: "richText", html: content.bodyHtml });
+    blocks.push({ type: "richText", id: "legacy-richtext", html: content.bodyHtml });
   }
   return blocks;
 }
