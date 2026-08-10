@@ -1107,3 +1107,92 @@ que depende de una pieza de infraestructura que Antonio todavía no
 conectó (el store de Edge Config real) — ninguna de las tres es un
 descuido de esta sesión, las tres requieren acceso o una decisión que
 solo él tiene. Ver el reporte final de F9 para el detalle completo.
+
+## F9 — Rollout a producción — ⛔ NECESITA A ANTONIO EN SU TOTALIDAD
+
+F0-F8 quedan cerradas (con las excepciones puntuales ya señaladas en cada
+cierre de fase). F9 es la última fase del plan y, por diseño del propio
+plan, es la única donde **no hay nada ejecutable por esta sesión** — el
+plan la describe así: "Todo en esta fase es su decisión: qué Offer usar
+para la primera prueba real, cuándo dar de alta `publish:pages` en la key
+de producción, y el go/no-go final." No es una fase que quedó a medias
+por falta de tiempo; es una fase gateada intencionalmente detrás del
+juicio de Antonio, no de un criterio automático que un agente pueda
+satisfacer.
+
+### Qué necesita hacer Antonio para completar F9
+
+1. **Confirmar que las migraciones de F0-F5 están aplicadas en la base
+   real de Supabase** — en particular `page_variant_label_unique` (F4),
+   la más reciente y la única con un índice único parcial escrito a mano
+   (Prisma no puede generarlo). Señalado como pendiente desde el PR de
+   F1/F3 retrofit.
+2. **Crear y conectar un Edge Config store real** en el proyecto de
+   Vercel de `apps/agent-api`, y fijar la clave `agent_api_kill_switch:
+   false` en él. Sin esto, el kill switch solo tiene su respaldo por
+   variable de entorno (`AGENT_API_KILL_SWITCH`, requiere redeploy) — el
+   mecanismo de Edge Config ya está implementado y probado (F1, F8), solo
+   falta la infraestructura real conectada.
+3. **Confirmar que el ambiente de producción de Vercel de
+   `apps/agent-api` usa el `DATABASE_URL` de `agent_api_role`** (nunca el
+   rol `postgres` que usan `apps/web`/`apps/admin`) — ver
+   `prisma/agent-access-layer/create_agent_api_role.sql`, que ya se
+   verificó línea por línea contra Postgres real en F8.
+4. **Emitir la primera `ApiClient`/`ApiKey` de producción real**, desde
+   `/agents` en `apps/admin` (F6) — decidir el nombre del cliente, si
+   arranca con `allowedOfferIds` acotado a una Offer descartable para la
+   primera prueba o abierto a todas, y qué scopes lleva la primera key
+   (`read` y `write` sin riesgo; añadir `publish:pages` es una decisión
+   suya, no algo que deba estar activo por defecto).
+5. **Configurar su MCP de producción con esa key real** y correr, él
+   mismo, el ciclo básico contra producción: leer catálogo → crear/editar
+   una Page → publicar → despublicar — idealmente sobre una Offer
+   descartable, como sugiere el plan.
+6. **Probar el kill switch en vivo contra producción**: activar
+   `agent_api_kill_switch` en el Edge Config real y confirmar que una
+   request en curso recibe `503` dentro de la ventana esperada (~30s:
+   propagación de Edge Config + hasta 15s de caché local — el mecanismo
+   en sí ya está probado exhaustivamente en F8, esto es la primera vez
+   que se mide contra infraestructura real).
+7. **Revocar esa key de prueba y confirmar que el MCP pierde acceso de
+   inmediato** — cierra el ciclo de prueba antes de emitir la key real de
+   uso diario.
+8. **Ensayo del gate de migración** (ítem de F8 que quedó pendiente por
+   requerir su acceso): restaurar un backup real de Supabase, medir el
+   tiempo de un backfill representativo, y confirmar que una versión
+   anterior de `apps/admin`/`apps/web` sigue funcionando contra el schema
+   ya migrado.
+
+Ninguno de estos 8 puntos requiere volver a tocar código — toda la
+superficie (endpoints, panel, kill switch, auditoría, contrato OpenAPI)
+ya está construida, probada localmente con Postgres real, y en un PR
+abierto contra `main`. Son, en su totalidad, pasos de infraestructura,
+credenciales, y juicio de negocio que le pertenecen a Antonio.
+
+### Resumen de lo entregado en esta sesión (F5-F8, sin pausas intermedias)
+
+Por instrucción explícita de Antonio de avanzar por su cuenta hasta el
+final del plan sin pedir aprobación fase por fase, esta sesión cerró,
+después del merge de F1/F3-retrofit+F4 (PR #16):
+
+- **F5** — Publicación, despublicación y preview con `PreviewToken`.
+- **F6** — Panel `/agents` completo en `apps/admin` (alta, scopes,
+  `allowedOfferIds`, emitir/rotar/revocar keys, suspender clientes, visor
+  de auditoría) — probado con Playwright contra Chromium real, no solo
+  con `curl`.
+- **F7** — `openapi.json` generado (parcialmente desde Zod, el resto a
+  mano) + visor estático — validado contra el meta-schema oficial de
+  OpenAPI 3.1, no una verificación estructural inventada.
+- **F8** — E2E real de 18 pasos, matriz negativa de permisos SQL
+  ejecutando el script real de producción, kill switch probado en su
+  mecanismo exacto (TTL + fail-closed), y auditoría bajo 40 escrituras
+  concurrentes reales.
+
+Cada fase se cerró con el mismo patrón: Postgres 16 real local,
+migraciones aplicadas, smoke test real (HTTP o navegador, nunca solo
+build/typecheck), limpieza completa del entorno, y un PR abierto contra
+`main` con el detalle. Un bug real de HTML inválido (F6, `ConfirmDialog`
+dentro de `<tbody>`) y un falso negativo real de Ajv contra el meta-schema
+de OpenAPI 3.1 (F7) se encontraron y corrigieron en el camino — ninguno
+de los dos era evidente sin correr las pruebas de navegador/validación
+reales que este plan exige.
