@@ -241,6 +241,49 @@ cerrado. Hasta entonces, F1 queda cerrada **técnicamente** (código,
 pruebas, pipeline) pero no **operacionalmente** (nadie confirmó el
 aislamiento en producción real).
 
+**Decisión explícita (2026-08-10, instrucción de Antonio)**: no se vuelve
+a rotar la password de `agent_api_role` en esta etapa — se usa la ya
+rotada arriba. Se evaluó automatizar el deploy completo con la única
+herramienta disponible para crear proyectos nuevos de Vercel
+(`deploy_to_vercel`), pero esa herramienta sube un árbol de archivos
+suelto sin integración de git y sin ningún campo para variables de
+entorno — forzarla habría dejado un deployment desconectado de git (sin
+auto-deploy en cada push, a diferencia de `empresas-antonio-admin`/`-web`)
+y el secreto embebido en un archivo del propio deployment. Decisión: el
+import se hace desde el dashboard de Vercel (Antonio), como los otros dos
+proyectos — no hay atajo de herramienta que preserve las mismas garantías.
+Ver la sección siguiente para el gate que esto deja pendiente antes de
+producción definitiva.
+
+## Gate obligatorio antes de F9 / producción definitiva
+
+Registrado por instrucción explícita de Antonio (2026-08-10). No es un
+gate de ninguna fase en particular — aplica transversalmente y se revisa
+de nuevo antes de declarar cualquier "producción definitiva" del Agent
+Access Layer, sin importar qué fase esté vigente en ese momento:
+
+- [ ] **Rotar `agent_api_role` una última vez**, con un secreto generado y
+  cargado directo en el gestor de secretos definitivo — nunca reutilizar
+  el valor rotado el 2026-08-10 durante el cierre operativo de F1 (ese
+  transitó, aunque una sola vez y de forma deliberada, por esta
+  conversación — cualquier secreto que haya existido en un canal de chat,
+  sin importar cuán acotada la exposición, se considera de un-nivel de
+  confianza distinto al de un secreto que nace directo en el gestor).
+- [ ] **Eliminar (no solo deshabilitar) toda ruta y variable de diagnóstico
+  temporal**: `GET /internal/role-check`
+  (`apps/agent-api/src/app/internal/role-check/route.ts`) y
+  `AGENT_API_ROLE_CHECK_TOKEN`. Confirmar con un `grep` del árbol de
+  `apps/agent-api` que no queda ninguna ruta bajo `internal/`.
+  Ver el cierre operativo de F1 más abajo — se aplica en cuanto la prueba
+  positiva/negativa quede demostrada, no se espera hasta este gate final.
+- [ ] **Auditar variables de entorno de los 3 proyectos de Vercel**
+  (`empresas-antonio-admin`, `empresas-antonio-web`, y el de
+  `apps/agent-api` una vez creado) buscando cualquier valor de
+  prueba/diagnóstico que haya sobrevivido de una verificación anterior.
+- [ ] **Confirmar que ningún secreto usado en desarrollo/staging (F0–F8)
+  se reutiliza en la configuración de producción definitiva** —
+  regenerar, no reciclar.
+
 ## Fase F2 — Infraestructura transversal — ✅ CERRADA (2026-08-10)
 
 **Alcance aprobado** (instrucción explícita de Antonio): únicamente la
