@@ -444,3 +444,101 @@ implementadas, conectadas al único endpoint real que existe
 (CAS), y verificadas con pruebas de concurrencia reales contra Postgres —
 no solo unitarias con mocks. No se implementó ningún endpoint de
 lectura de catálogo (F3) ni de escritura agentic (F4).
+
+## Fase F3 — Lectura de catálogo — ✅ CERRADA (2026-08-10)
+
+**Alcance aprobado** (instrucción explícita de Antonio, 2026-08-10): endpoints
+de solo lectura en `apps/agent-api` para que un agente autenticado pueda leer
+Products, Offers (con Prices embebidas) y Pages (contenido) — "todo lo que le
+permita a mi editorial de agentes moverse libremente". Explícitamente **sin**
+restricción por `allowedOfferIds` en lectura (esa restricción queda para
+escritura, F4). Sin paginación — no existe ningún precedente de paginación en
+todo el monorepo (grep de `skip:|take:|cursor:` → 0 resultados en `apps/` y
+`packages/core`); si el volumen real de Products/Offers lo justifica, se
+agrega cuando haga falta, no antes.
+
+### Qué se construyó
+
+- **Composition root** (`apps/agent-api/src/lib/agent-access.ts`): se agregan
+  `PrismaProductRepository` y `PrismaOfferRepository` — `agent_api_role` ya
+  tenía `SELECT` sobre `products`/`offers`/`prices` desde F0, anticipando esta
+  fase; el bloqueo era solo de código de aplicación, no de permisos de
+  Postgres.
+- **`apps/agent-api/src/lib/require-agent-read.ts`**: helper compartido que
+  extrae el patrón de `whoami` (F1) — autenticar, denegar+auditar,
+  rate-limit+auditar — y le agrega un chequeo de scope explícito vía
+  `authorizeAgentAction(principal, { scope: "read", isWrite: false })`. Las 5
+  rutas nuevas lo reusan en vez de repetir ~45 líneas de boilerplate cada una.
+- **`GET /products`, `GET /products/:id`**: lectura directa de
+  `ProductRepository.list()`/`findById()`, sin cambios sobre el puerto
+  existente (el mismo que usa `apps/admin`).
+- **`GET /offers`, `GET /offers/:id`**: lectura de `OfferRepository.list()`/
+  `findById()` — ya traen `prices` embebidas (`OfferListItem`/
+  `OfferWithPrices`); no existe (ni se crea) un `PriceRepository` separado,
+  Price siempre cuelga de Offer en este dominio.
+- **`GET /pages?offerId=&kind=`**: lectura vía `PageRepository.findByOfferAndKind`
+  — el único método de lectura puntual que ya existía (F0/F2). No se agrega
+  un "listar todas las Pages": `PageKind` tiene 3 valores fijos
+  (`LANDING`/`CHECKOUT`/`THANK_YOU`) y `offerId` ya se obtiene de
+  `GET /offers`, así que un agente puede enumerar las páginas de una Offer
+  sin necesitar un endpoint de listado nuevo. `kind` inválido o ausente →
+  `400 invalid_query` (nunca 500, nunca una query a Postgres con un enum
+  inválido).
+
+### Decisión explícita: exigir scope `"read"`
+
+F1 dejó `ApiKey.scopes` como `string[]` libre, sin ningún consumidor real —
+`whoami` no exige ninguno porque es introspección de la propia identidad, no
+acceso a datos de negocio. F3 es la primera vez que una ApiKey lee datos de
+negocio reales; sin un scope que lo gatee, el mecanismo de scopes construido
+en F1 seguiría completamente decorativo. Decisión: las 5 rutas de F3 exigen
+`authorizeAgentAction(principal, { scope: "read", isWrite: false })` —
+`missing_scope` → `403` (mismo código que ya existía en
+`DENIAL_STATUS_CODE`, sin cambios ahí). **Consecuencia operativa**: ninguna
+ApiKey emitida antes de F3 tiene este scope; hay que reemitir con
+`--scopes read` (`manage-agent-clients.mjs issue-key --client-id <id>
+--scopes read`) para poder usar `/products`, `/offers` o `/pages`. `/whoami`
+sigue sin exigir scope — no es un recurso de negocio.
+
+### Verificación — pruebas ejecutadas contra Postgres real, no solo escritas
+
+Mismo entorno que F1/F2 (Postgres 16 local, no producción; las 7 migraciones
+existentes aplicadas, base descartada al terminar). Suite completa de
+`packages/core` sin cambios de código en ese paquete (F3 solo agrega código
+en `apps/agent-api`) — **121/121 tests verdes, 7 skipped, sin regresiones**,
+confirmando que agregar `PrismaProductRepository`/`PrismaOfferRepository` al
+composition root de `apps/agent-api` no rompió nada existente.
+
+Smoke test end-to-end real por HTTP (no solo vitest) contra `apps/agent-api`
+corriendo en local con datos seedeados (1 Product, 1 Offer con 1 Price, 1
+Page `LANDING`) y dos ApiKeys reales emitidas con el CLI (una con
+`--scopes read`, otra sin scopes):
+
+| Caso | Resultado |
+|---|---|
+| `GET /products` sin `Authorization` | `401 invalid_credentials` |
+| `GET /products` con key sin scope `read` | `403 missing_scope` |
+| `GET /products` con key con scope `read` | `200`, incluye el Product seedeado |
+| `GET /products/:id` existente | `200` |
+| `GET /products/:id` inexistente | `404 not_found` |
+| `GET /offers` | `200`, cada Offer con `prices` embebidas |
+| `GET /offers/:id` | `200` |
+| `GET /pages?offerId=X&kind=LANDING` (existe) | `200` con `content` completo |
+| `GET /pages?offerId=X&kind=CHECKOUT` (no existe esa Page) | `404 not_found` |
+| `GET /pages?offerId=X` (sin `kind`) | `400 invalid_query` |
+| `GET /whoami` con la key sin scope `read` | `200` — F1 sigue sin exigir scope, no regresionó |
+
+`pnpm run boundaries` (81 módulos, 204 dependencias, sin violaciones),
+`pnpm -r typecheck`, `pnpm -r lint` y `pnpm -r build` verificados en verde en
+los 7 workspaces después de todos los cambios — `apps/agent-api` build final
+con las 7 rutas: `/health`, `/whoami`, `/products`, `/products/[id]`,
+`/offers`, `/offers/[id]`, `/pages`.
+
+### Declaración de cierre
+
+**F3 queda formalmente cerrada el 2026-08-10.** Lectura de catálogo completa
+(Products, Offers con Prices, Pages) disponible para cualquier agente
+autenticado con scope `read`, sin restricción por Offer, verificada con
+datos reales contra Postgres — no solo con mocks. No se implementó ninguna
+escritura agentic (F4) ni paginación (sin precedente en el repo, se agrega
+si el volumen lo justifica).
