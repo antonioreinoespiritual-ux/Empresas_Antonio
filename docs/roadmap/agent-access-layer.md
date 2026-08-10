@@ -101,6 +101,118 @@ de negocio que lean/escriban `Page.content`, rate limiting real sobre
 `ApiRateLimitBucket`, `PreviewToken`, `IdempotencyRecord`, panel
 `/agents` en `apps/admin` para gestión humana de `ApiClient`/`ApiKey`.
 
-_(El reporte de cierre de F1, con evidencia de implementación, pruebas y
-verificación, se agrega en esta misma sección al completarse la fase — ver
-más abajo.)_
+### Cierre de F1 — ✅ CERRADA (2026-08-10)
+
+#### Qué se construyó
+
+- **Dominio** (`packages/core/src/domain/agent-access/`): `ApiClient`/`ApiKey`
+  como tipos + funciones puras (`isClientUsable`, `isOfferAllowed`,
+  `apiKeyUnusableReason`/`isKeyUsable`, `hasScope`), `parseBearerToken`
+  (formato `Bearer <keyPrefix>.<secret>`), y `authorizeAgentAction` — la
+  decisión de autorización completa (scope + allowedOfferIds +
+  forceReadOnly) sin ningún I/O, 100% testeable sin base de datos.
+- **Aplicación** (`packages/core/src/application/agent-access/`): puertos
+  `ApiClientRepository`/`ApiKeyRepository`/`AgentAuditLogRepository`/
+  `ApiKeyHasher`/`ApiKeySecretGenerator`, y los dos use-cases que
+  orquestan múltiples puertos: `authenticateAgentRequest` (bearer → hash →
+  revocación/expiración → status del cliente → `AgentPrincipal`) e
+  `issueApiKey` (genera material, hashea, nunca persiste el secreto en
+  claro). Las mutaciones de un solo repositorio (crear cliente, revocar,
+  suspender, forceReadOnly, allowedOfferIds) se llaman directamente sobre
+  el repositorio, igual que `commerce.offers.setActive()` en apps/admin —
+  sin wrappers de use-case que no agregarían ninguna regla de negocio.
+- **Infraestructura**: `NodeApiKeyHasher` (SHA-256 + `timingSafeEqual`,
+  sin salt — el secreto ya tiene 256 bits de entropía propia, a diferencia
+  de una contraseña) y `NodeApiKeySecretGenerator`; los tres repositorios
+  Prisma, cada mutación en un `$transaction` que escribe la entidad y su
+  fila de `AuditLog` de forma atómica — nunca "mejor esfuerzo" después del
+  hecho.
+- **apps/agent-api**: `GET /whoami` — única ruta autenticada de F1,
+  introspección de identidad pura (no toca ningún recurso de negocio).
+  Cada request autenticada o denegada-con-identidad-resuelta queda en
+  `AgentAuditLog` (best-effort, no atómico — no hay ninguna mutación con
+  la que deba serlo).
+- **`packages/core/scripts/manage-agent-clients.mjs`**: único camino para
+  crear/administrar `ApiClient`/`ApiKey` mientras no exista un panel admin
+  (F2+) — mismo patrón que `seed-admin.mjs`.
+- **Los 3 kill switches**: global (`AGENT_API_KILL_SWITCH`, env var, no
+  toca la base — para cuando la base misma es la preocupación), por
+  cliente (`ApiClientStatus.SUSPENDED`), por key (`ApiKey.revokedAt`).
+
+#### Hallazgo de F0 corregido durante la implementación
+
+`ApiClient.allowedOfferIds` está documentado en el schema (F0) con 3
+estados (`null`=todas, `[]`=ninguna, array=allow-list), pero Prisma Client
+tipa ese campo como `string[]` — nunca `string[] | null` — y **colapsa
+cualquier NULL de Postgres a `[]` al leerlo**, sin forma de recuperar el
+NULL real a través de `findUnique`/`findMany`. `PrismaApiClientRepository`
+resuelve esto con `$queryRawUnsafe` solo para este campo en las lecturas
+(`findById`/`list`) y `$executeRawUnsafe` para volver a NULL desde un
+allow-list previo (`setAllowedOfferIds`) — el resto de la tabla usa la API
+normal de Prisma. Verificado con una prueba dedicada que lee la columna
+cruda y confirma que NULL y `[]` quedan realmente distinguibles en
+Postgres (no solo en el tipo de TypeScript).
+
+#### Verificación — ejecutada contra Postgres real, no solo escrita
+
+A diferencia del gate de F0 (sin DB disponible en el sandbox), esta vez se
+levantó Postgres 16 local (ya instalado en el entorno, no en producción),
+se aplicaron las 7 migraciones existentes sin tocar producción, y se
+corrió la suite completa:
+
+```
+Test Files  12 passed | 3 skipped (15)
+     Tests  110 passed | 7 skipped (117)
+```
+
+Incluye 15/15 en `agent-access.integration.test.ts` (ciclo de vida de
+ApiClient con los 3 estados de `allowedOfferIds`, atomicidad
+mutación+AuditLog, revoke idempotente, y `authenticateAgentRequest` para
+cada resultado: éxito, `kill_switch_engaged`, `invalid_credentials` ×3,
+`key_revoked`, `key_expired`, `client_suspended`), 30/30 en
+`agent-access-domain.test.ts` (dominio puro) y 7/7 en
+`agent-access-crypto.test.ts` (hash/verify/generación). **Los 82 tests
+preexistentes de F0 (payments, webhooks, Better Auth, theming) siguen en
+verde** — sin regresiones.
+
+Además, smoke test end-to-end real por HTTP (no solo vitest): CLI script →
+`create-client` → `issue-key` → `GET /whoami` con la key real → `200` con
+el `AgentPrincipal` completo; con secreto incorrecto o sin header → `401
+invalid_credentials` (mismo motivo en ambos casos, para no permitir
+enumerar `keyPrefix` válidos); tras `revoke-key` → `401 key_revoked`; con
+`AGENT_API_KILL_SWITCH=true` → `503 kill_switch_engaged` incluso con una
+key perfectamente válida. Confirmado en Postgres que cada intento con
+identidad resuelta (éxito o denegado) generó su fila en `AgentAuditLog`, y
+que cada mutación de identidad (crear cliente, emitir/revocar key) generó
+su fila en `AuditLog` — ambas tablas con la atribución de actor correcta
+(`test`/`vitest` desde la suite, `cli`/`root` desde el uso manual). Entorno
+de prueba completamente descartado al terminar (DB local eliminada,
+Postgres detenido, sin `.env` ni `.env.local` commiteados).
+
+`pnpm run boundaries` + `pnpm -r typecheck` + `pnpm -r lint` + `pnpm -r
+build` verificados en verde en los 7 workspaces de código (8 con la raíz)
+después de todos los cambios.
+
+#### Decisión de diseño explícita: qué se revela en una denegación
+
+`invalid_credentials` es la misma respuesta tanto si el `keyPrefix` no
+existe como si el secreto no coincide — evita que un llamador pueda
+enumerar prefixes válidos probando secretos al azar. `key_revoked`,
+`key_expired`, `client_suspended` y `kill_switch_engaged` sí se devuelven
+explícitos al llamador (no solo al `AgentAuditLog`) — quien ya presentó
+una key estructuralmente válida una vez puede auto-diagnosticar su propio
+estado sin necesitar soporte; es el mismo criterio que usan Stripe/GitHub
+para sus API keys.
+
+#### Pendiente operativo (no de código, fuera de lo que esta sesión puede verificar)
+
+El `DATABASE_URL` del proyecto de Vercel de `apps/agent-api` debe apuntar
+a `agent_api_role` (no al rol `postgres` que usan web/admin) para que las
+grants mínimas de F0 (`create_agent_api_role.sql`) apliquen de verdad en
+producción — es un ajuste de variables de entorno en el dashboard de
+Vercel, no algo que este entorno de sesión pueda leer ni cambiar. Mientras
+no se confirme, `authenticateAgentRequest`/`recordAgentAuditLog` en
+producción corren con lo que esa variable tenga configurado hoy.
+`manage-agent-clients.mjs` está diseñado para el `DATABASE_URL` de rol
+`postgres` (el de la raíz del monorepo) — nunca con el de `agent_api_role`,
+que no tiene permisos para sus mutaciones.
