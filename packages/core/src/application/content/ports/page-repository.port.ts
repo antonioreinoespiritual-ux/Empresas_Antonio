@@ -64,4 +64,10 @@ export interface PageRepository {
    */
   updateWithVersionAudited(input: UpdatePageWithVersionInput, audit: AgentPageAuditContext): Promise<Page>;
   setStatus(pageId: string, status: PageStatus): Promise<void>;
+  /**
+   * Igual que setStatus, pero el UPDATE y el INSERT en AgentAuditLog viajan
+   * en la misma transacción (F5 — publish/unpublish son mutaciones
+   * críticas, auditoría durable y atómica, no best-effort).
+   */
+  setStatusAudited(pageId: string, status: PageStatus, audit: AgentPageAuditContext): Promise<Page>;
 }

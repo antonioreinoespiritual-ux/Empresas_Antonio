@@ -17,5 +17,6 @@ export * from "./content/theme-id";
 export * from "./shared/domain-error";
 export * from "./agent-access/api-client.entity";
 export * from "./agent-access/api-key.entity";
+export * from "./agent-access/preview-token.entity";
 export * from "./agent-access/agent-principal";
 export * from "./agent-access/bearer-token";

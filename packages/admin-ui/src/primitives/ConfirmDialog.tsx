@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "./Button";
 
 export interface ConfirmDialogProps {
@@ -89,7 +90,11 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
-  return (
+  // Portal a document.body: este diálogo puede montarse desde una fila de
+  // tabla (<tbody>/<tr>) u otros contenedores que no admiten un <div>
+  // posicionado como hijo directo — sin portal, React genera un HTML
+  // inválido ahí (advertencia de hidratación) aunque visualmente no se note.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
       onClick={() => !isLoading && onCancel()}
@@ -122,6 +127,7 @@ export function ConfirmDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

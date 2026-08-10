@@ -7,6 +7,7 @@ import {
   PrismaIdempotencyRecordRepository,
   PrismaOfferRepository,
   PrismaPageRepository,
+  PrismaPreviewTokenRepository,
   PrismaProductRepository,
   PrismaRateLimitBucketRepository,
 } from "@repo/core/infrastructure";
@@ -45,4 +46,7 @@ export const agentAccess = {
   // llamara por error desde acá.
   products: new PrismaProductRepository(),
   offers: new PrismaOfferRepository(),
+  // F5 — publicación y preview. agent_api_role tiene SELECT/INSERT/UPDATE
+  // sobre "preview_tokens" desde F0 (anticipando esta fase, igual que pages).
+  previewTokens: new PrismaPreviewTokenRepository(),
 };

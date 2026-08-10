@@ -198,6 +198,29 @@ export class PrismaPageRepository implements PageRepository {
     await prisma.page.update({ where: { id: pageId }, data: { status } });
   }
 
+  async setStatusAudited(pageId: string, status: PageStatus, audit: AgentPageAuditContext): Promise<Page> {
+    return prisma.$transaction(async (tx) => {
+      const page = await tx.page.update({ where: { id: pageId }, data: { status } });
+
+      await tx.agentAuditLog.create({
+        data: {
+          requestId: audit.requestId,
+          apiClientId: audit.apiClientId,
+          apiKeyId: audit.apiKeyId ?? null,
+          method: status === "PUBLISHED" ? "PAGE_PUBLISH" : "PAGE_UNPUBLISH",
+          resourceType: "Page",
+          resourceId: page.id,
+          statusCode: 200,
+          latencyMs: 0,
+          outcome: status === "PUBLISHED" ? "published" : "unpublished",
+          changeSummary: { offerId: page.offerId, kind: page.kind, status },
+        },
+      });
+
+      return page;
+    });
+  }
+
   private requireCasRow(rows: PageRow[], input: UpdatePageWithVersionInput): PageRow {
     const [row] = rows;
     if (!row) {

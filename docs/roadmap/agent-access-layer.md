@@ -756,5 +756,179 @@ direccionables + variantes). Pendientes explícitos, ninguno bloqueante para
 el código ya desplegable:
 - Aplicar la migración `page_variant_label_unique` a producción.
 - Crear y conectar el Edge Config store en Vercel.
-- F5 (publicación y preview), F6 (panel admin), F7 (OpenAPI/contrato MCP),
-  F8 (verificación integral) y F9 (rollout a producción) — sin empezar.
+
+## F5 — Publicación y preview — ✅ CERRADA (2026-08-10)
+
+Por instrucción explícita de Antonio ("avanzá hasta la fase final del plan,
+implementalo todo rigurosamente... hazlo todo tú, sin preguntar"), esta
+sesión continuó directamente hacia F5-F9 sin gate intermedio de aprobación
+por fase — cada fase se construye con el mismo rigor de pruebas que F1-F4
+(pipeline completo + smoke test real contra Postgres local antes de cada
+commit), pero sin pausar a pedir confirmación entre una y la siguiente.
+
+### Qué se construyó
+
+- **`PreviewToken`** (`packages/core/src/domain/agent-access/preview-token.entity.ts`):
+  mismo split público/secreto que `ApiKey` — `tokenId` indexado (no
+  secreto) + `secretHash` (nunca el secreto en claro). Reusa el mismo
+  `ApiKeyHasher` (SHA-256 + `timingSafeEqual`) — el secreto ya tiene la
+  misma alta entropía, no hace falta una clase de hashing nueva.
+- **`PreviewTokenRepository.createReplacingActive()`**: revoca (nunca
+  `DELETE`, por trazabilidad) cualquier token vigente de la misma Page
+  antes de crear el nuevo, en una sola transacción — nunca coexisten dos
+  tokens vigentes para una Page. Los GRANTs de `agent_api_role` sobre
+  `preview_tokens` (`SELECT, INSERT, UPDATE`) ya existían desde F0,
+  anticipando exactamente esta fase.
+- **`createPreviewToken`/`verifyPreviewToken`** (use-cases): `verifyPreviewToken`
+  nunca distingue "token inexistente" de "secreto incorrecto" en la
+  respuesta — mismo criterio anti-enumeración que `authenticateAgentRequest`.
+- **Tercer scope real**: `PUBLISH_SCOPE = "publish:pages"`, deliberadamente
+  distinto de `"write"` — una key puede editar contenido sin poder
+  publicarlo. `requireAgentPublish` en `apps/agent-api/src/lib/require-agent-access.ts`.
+- **`POST /pages/:id/publish`, `/unpublish`**: idempotentes por diseño
+  (publicar dos veces es un no-op `200`, no un error) — usan el nuevo
+  `PageRepository.setStatusAudited()` (audit atómico en la misma
+  transacción, igual que `updateWithVersionAudited`; `setStatus` sin
+  auditar queda para el panel humano, F6).
+- **`POST /pages/:id/preview`**: funciona sin importar el `status` de la
+  Page (a diferencia de publish/unpublish) — devuelve `previewUrl` +
+  `expiresAt`. TTL 24h (arbitrario, documentado igual que otros TTL de este
+  repo).
+- **`apps/web/src/app/preview/[token]/page.tsx`**: reusa exactamente el
+  mismo motor de render que `/[slug]` — extraído a un componente compartido
+  (`LandingPageView`) para no duplicar el JSX entre ambas rutas.
+- **Headers de seguridad vía `middleware.ts`** (no vía `Metadata` — un
+  `page.tsx` de App Router no puede fijar headers HTTP reales):
+  `Cache-Control: no-store`, `X-Robots-Tag: noindex`,
+  `Referrer-Policy: no-referrer`. El hash del secreto protege contra una
+  fuga de base de datos, no contra la URL en sí (puede quedar en logs de
+  acceso o en un header `Referer`) — por eso TTL corto + revocación al
+  emitir uno nuevo + estos headers, ninguno solo.
+
+### Verificación
+
+Mismo entorno que F1-F4 (Postgres 16 local, migraciones aplicadas, base
+descartada al terminar). `packages/core`: **121/121 tests verdes, 7
+skipped, sin regresiones**. Smoke test HTTP real contra ambas apps
+(`apps/agent-api` + `apps/web`) corriendo en local:
+
+| Caso | Resultado |
+|---|---|
+| `POST publish` con key sin `publish:pages` | `403 missing_scope` |
+| `POST preview` con la Page en `DRAFT` (antes de publicar) | `201`, funciona igual |
+| `POST publish` | `200`, `status` pasa a `PUBLISHED` |
+| `POST publish` de nuevo | `200` no-op, mismo body, no error |
+| `POST unpublish` | `200`, `status` vuelve a `DRAFT` |
+| `GET /preview/:token` en `apps/web` real | `200`, headers `Cache-Control: no-store`, `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer` confirmados, contenido del bloque `hero` renderizado |
+| Token de preview inválido | `404` |
+| Emitir un segundo preview de la misma Page | El primer token queda revocado (`404` al usarlo), el segundo funciona (`200`) |
+
+`pnpm run boundaries`, `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r build`
+en verde en los 7 workspaces — 17 rutas en `apps/agent-api`, `/preview/[token]`
+nueva en `apps/web`.
+
+### Declaración de cierre
+
+**F5 queda formalmente cerrada el 2026-08-10.** Ciclo agentic completo
+demostrable de punta a punta: leer catálogo (F3) → crear/editar contenido
+con bloques y variantes (F4) → preview → publicar/despublicar (F5) — sin
+ninguna intervención de código ni de base de datos fuera de las rutas HTTP
+ya construidas.
+
+## F6 — Panel de administración de agentes en apps/admin — ✅ CERRADA (2026-08-10)
+
+F1 ya había construido toda la capa de aplicación necesaria
+(`ApiClientRepository`, `ApiKeyRepository`, el use-case `issueApiKey`, el
+tipo `AuditActor`) pensando en que un humano, no solo un agente, terminaría
+gestionando estas identidades. F6 es sobre todo composición de UI sobre esa
+base ya existente, reusando los primitivos de `packages/admin-ui` y las
+convenciones ya establecidas en `offers`/`products`.
+
+### Qué se construyó
+
+- **`apps/admin/src/lib/agent-access.ts`**: composition root nuevo, análogo
+  a `commerce.ts` — corre con el `DATABASE_URL` de rol `postgres` (nunca
+  `agent_api_role`, que no tiene permiso de leer `AgentAuditLog` ni de
+  mutar identidad — ver el comentario en el propio archivo y en
+  `agent-audit-log-repository.port.ts`).
+- **`AgentAuditLogRepository.list()`** (nuevo método, con su
+  `AgentAuditLogRow`/`ListAgentAuditLogInput`): paginación por cursor sobre
+  `agent_audit_logs`, mismo patrón que `listForAgent()` de F3/retrofit.
+  Cubierto por una prueba de integración nueva
+  (`test/agent-audit-log-list.integration.test.ts`, 4 casos: filtro por
+  `apiClientId`, sin filtro, paginación sin duplicar/saltar filas, y
+  `nextCursor` en `null` cuando la última página coincide exactamente con
+  el `limit`).
+- **`/agents`**: listado de `ApiClient` con estado y link al detalle.
+- **`/agents/new`**: alta de cliente — nombre, descripción,
+  `forceReadOnly`, y un selector de 3 estados para `allowedOfferIds`
+  ("todas" / "ninguna" / "específicas") en vez de un array vacío por
+  defecto, porque `null`/`[]`/array-con-ids son 3 estados con significado
+  real en el dominio (ver F1).
+- **`/agents/[id]`**: detalle — `ClientStatusToggle` (kill switch por
+  cliente, con `ConfirmDialog` porque corta acceso real de todas las keys
+  de golpe), `ForceReadOnlyToggle` (checkbox simple, menor consecuencia que
+  suspender), `AllowedOfferIdsEditor`, y la tabla de `ApiKey` con emitir /
+  rotar / revocar.
+- **`IssueKeyDialog`**: el secreto se muestra en claro una única vez; el
+  botón "Cerrar" queda deshabilitado hasta que se marca "Ya copié el
+  secreto" — a diferencia de `ConfirmDialog`, este diálogo no se cierra con
+  Escape ni clic afuera mientras el secreto está visible y sin confirmar.
+  "Rotar" reusa el mismo diálogo (`rotatingKeyId` presente): emite la key
+  nueva y solo entonces revoca la anterior — nunca al revés, para no dejar
+  una ventana sin ninguna key vigente si la emisión fallara.
+- **`/agents/audit`**: visor de `AgentAuditLog` — tráfico real de agentes
+  autenticados o rechazados contra `apps/agent-api`, no las acciones del
+  propio panel de admin (esas ya quedaban auditadas en la tabla `AuditLog`
+  general desde antes de este plan — ver "Bug encontrado" abajo).
+
+### Bug encontrado y corregido durante las pruebas de navegador
+
+`ConfirmDialog` (`packages/admin-ui`) e `IssueKeyDialog` renderizan un
+overlay `position: fixed` como hijo directo del árbol donde se montan. Eso
+es válido en cualquier contenedor normal, pero `ApiKeyRow` los monta como
+hermanos de un `<TableRow>` — es decir, directamente dentro de `<tbody>`,
+donde un `<div>` no es HTML válido (`<tbody>` solo admite `<tr>`). Un test
+de Playwright contra Chromium real expuso la advertencia de hidratación de
+React que un `curl`/smoke test HTTP nunca podría detectar. Corregido
+montando ambos diálogos vía `createPortal(..., document.body)` — el fix se
+hizo en el primitivo compartido `ConfirmDialog` (beneficia también a
+`price-manager.tsx`, que ya lo usaba fuera de una tabla y sigue funcionando
+igual) y en `IssueKeyDialog` (local a `apps/admin`, mismo patrón).
+
+### Verificación
+
+Mismo entorno que F1-F5 (Postgres 16 local, migraciones aplicadas —
+incluye la migración de variantes de F4 —, base descartada al terminar).
+`packages/core`: **125/125 tests verdes, 7 skipped, sin regresiones** (121
+previos + 4 nuevos de `agent-audit-log-list.integration.test.ts`).
+
+Smoke test de navegador real (Playwright + Chromium, sin instalar
+Playwright en el repo — `playwright-core` en un scratchpad ad hoc contra el
+Chromium ya preinstalado del entorno) contra `apps/admin` corriendo en
+local, con un `AdminUser` sembrado vía `scripts/seed-admin.mjs`:
+
+| Caso | Resultado |
+|---|---|
+| Login real + navegar a `/agents` | `200`, listado vacío al inicio |
+| Crear cliente (`allowedOfferIds = null`, "todas") | Redirige a `/agents/:id`, nombre visible |
+| Crear cliente con "Offers específicas" (una Offer seleccionada) | `allowedOfferIds` queda con esa Offer únicamente |
+| Emitir key (`read`+`write`) | Secreto mostrado una vez; "Cerrar" deshabilitado hasta marcar "Ya copié el secreto"; habilitado después |
+| Revocar la key | Pasa a "Revocada" en la tabla, `ConfirmDialog` de por medio |
+| Rotar una key | Emite una nueva y revoca la anterior; verificado directo en Postgres (`revokedAt` no nulo en la vieja, nula en la nueva) — la UI de Next dev tarda un instante extra en reflejarlo sin recargar, la base nunca estuvo en un estado inconsistente |
+| `ForceReadOnlyToggle` / `AllowedOfferIdsEditor` | Cambios persisten tras recargar la página |
+| Suspender / reactivar cliente (`ClientStatusToggle`) | Cambia de estado con `ConfirmDialog`, persiste |
+| `/agents/audit` | Carga sin error (vacío en esta prueba — no se hicieron requests reales de agente en esta sesión de navegador) |
+| Acciones de admin (crear/emitir/revocar) | Quedan en la tabla `AuditLog` general con `actorType: "admin"`, **no** en `AgentAuditLog` — confirmado por consulta directa a Postgres |
+
+`pnpm run boundaries`, `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r build`
+en verde en los 7 workspaces — 4 rutas nuevas en `apps/admin`
+(`/agents`, `/agents/new`, `/agents/[id]`, `/agents/audit`).
+
+### Declaración de cierre
+
+**F6 queda formalmente cerrada el 2026-08-10.** Antonio ya no necesita
+`scripts/manage-agent-clients.mjs` (CLI) para operar el ciclo de vida de un
+agente en el día a día — puede crear clientes, emitir/rotar/revocar keys,
+ajustar `allowedOfferIds`/`forceReadOnly`, suspender un cliente entero, y
+auditar su tráfico, todo desde el panel.
