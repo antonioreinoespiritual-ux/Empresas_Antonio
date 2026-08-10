@@ -1022,3 +1022,88 @@ integrarse contra esta API leyendo únicamente `GET /openapi.json` (o su
 visor en `/docs.html`) — nunca necesita abrir el código fuente de
 `apps/agent-api` para saber qué endpoints existen, qué autenticación
 requieren, o qué forma tiene cada request/response.
+
+## F8 — Verificación integral — ✅ CERRADA para todo lo ejecutable sin Antonio (2026-08-10)
+
+El propio plan describe F8 así: "no es donde se escriben las pruebas — la
+mayoría ya se escribieron dentro de F1-F5, cada una junto a la pieza que
+valida. Esta fase es donde se corren todas juntas como gate final, y donde
+ocurren las dos pruebas que no pueden existir antes." De esas dos, una
+(el E2E con una key real) se construyó y se corrió acá; la otra (el MCP
+real de Antonio) es, por definición del propio plan, "Necesita a Antonio"
+— nadie más puede ejecutarla. Ver la sección final de este documento para
+el detalle de qué queda pendiente exclusivamente para él.
+
+### Qué se construyó
+
+- **`scripts/e2e-agent-smoke.mjs`** (nuevo directorio `scripts/` en la raíz
+  del repo, separado de `packages/core/scripts/` porque este no es un
+  script de mantenimiento de una app puntual sino un smoke test HTTP
+  cross-cutting): ejercita el ciclo agentic completo contra una instancia
+  real de `apps/agent-api` — `whoami` → catálogo (`products`, `offers`,
+  `themes`, `block-types`) → crear/obtener una Page de trabajo (variante si
+  la Offer ya tenía una Page primaria, para no arriesgar un 409 en una
+  Offer con contenido real) → agregar un bloque → editarlo → reordenar →
+  emitir preview → publicar → publicar de nuevo (confirma el no-op
+  idempotente) → despublicar → eliminar el bloque agregado (limpieza). Se
+  corrió de punta a punta contra una instancia local real: **18/18 pasos
+  en verde**, incluida la doble verificación de que tanto la rama "crear
+  Page nueva" como la rama "crear variante sobre una Page primaria
+  existente" funcionan (se confirmó cada una por separado, no solo la que
+  tocó ejecutar orgánicamente en la corrida principal).
+- **`packages/core/test/agent-api-role-grants.integration.test.ts`**
+  (nuevo, 12 tests): ejecuta el script REAL de producción
+  (`prisma/agent-access-layer/create_agent_api_role.sql`, sin copiarlo a
+  mano) contra Postgres real, conecta después como `agent_api_role` de
+  verdad, y prueba **la matriz negativa completa por operación** para las
+  10 tablas otorgadas (SELECT/INSERT/UPDATE/DELETE, una por una) más el
+  **default-deny de una tabla nueva sin ningún GRANT**. Limpia el rol y la
+  tabla de prueba al terminar.
+- **`apps/agent-api/test/kill-switch.test.ts`** (nuevo, 7 tests): sin un
+  store de Edge Config real conectado todavía (pendiente, ya señalado en
+  PRs anteriores — ver el cierre de esta sección), se probó el mecanismo
+  en sí con Edge Config mockeado + fake timers: TTL de caché de **15s
+  exactos** (verificado en el límite: cacheado a los 14 999ms, vuelve a
+  consultar a los 15 001ms), **fail-closed real** al fallar la lectura
+  (incluso con un valor cacheado previo distinto — nunca fail-open), y que
+  el respaldo por variable de entorno bloquea de forma independiente sin
+  siquiera consultar Edge Config.
+- **`packages/core/test/agent-access-concurrency.integration.test.ts`**:
+  un test nuevo de auditoría bajo carga real — 40 escrituras concurrentes
+  (20 independientes + 20 compitiendo por CAS sobre la misma Page) y
+  verificación en conjunto de que cada éxito tiene exactamente su
+  `AgentAuditLog` y ningún conflicto deja huérfanos.
+
+### Lo que este plan marca como "no puede existir antes de F8" y su estado real
+
+| Ítem del plan | Estado |
+|---|---|
+| E2E con una key real (no la de seed) | ✅ Hecho — `scripts/e2e-agent-smoke.mjs`, 18/18 en verde |
+| Integración real con el MCP de Antonio | ⛔ Necesita a Antonio — nadie más tiene su MCP real |
+| Kill switch cronometrado (~30s, contra staging real) | ⚠️ Parcial — el mecanismo está probado exhaustivamente (TTL, fail-closed) con Edge Config mockeado; la medición en vivo contra un store real de Vercel Edge Config sigue bloqueada porque ese store todavía no existe (pendiente ya señalado en el PR de F1/F3 retrofit: "Crear y conectar el Edge Config store en el proyecto de Vercel") |
+| Fallo inyectado de Edge Config | ✅ Hecho (vía mock) — fail-closed confirmado, nunca fail-open, con y sin caché previo |
+| Default-deny por tabla nueva | ✅ Hecho — `agent-api-role-grants.integration.test.ts` |
+| Matriz negativa por operación (9-10 tablas) | ✅ Hecho — las 10 tablas realmente otorgadas por el script de producción, no solo las 9 que menciona el plan (el script creció con F5: `preview_tokens`) |
+| Atomicidad de auditoría bajo carga | ✅ Hecho — 40 escrituras concurrentes reales |
+| Ensayo del gate de migración (restauración desde backup real) | ⛔ Necesita a Antonio — requiere su acceso al proyecto de Supabase real; no ejecutable contra una base local descartable |
+
+### Verificación
+
+Pipeline completo con Postgres 16 local (migraciones aplicadas, base
+descartada al terminar): `pnpm run boundaries`, `pnpm -r typecheck`,
+`pnpm -r lint`, `pnpm -r build` en verde en los 7 workspaces.
+`packages/core`: **138/138 tests verdes, 7 skipped** (125 previos + 12 de
+la matriz de grants + 1 de auditoría bajo carga). `apps/agent-api`:
+**11/11 tests verdes** (4 de F7 + 7 de kill switch). El E2E real contra
+una instancia local en vivo: **18/18 pasos**.
+
+### Declaración de cierre
+
+**F8 queda cerrada el 2026-08-10 para todo lo que es ejecutable sin la
+intervención directa de Antonio.** Quedan exactamente dos brechas, ambas
+ya identificadas por el propio plan como "Necesita a Antonio" (el MCP real
+y el ensayo de restauración desde backup de producción) más una tercera
+que depende de una pieza de infraestructura que Antonio todavía no
+conectó (el store de Edge Config real) — ninguna de las tres es un
+descuido de esta sesión, las tres requieren acceso o una decisión que
+solo él tiene. Ver el reporte final de F9 para el detalle completo.

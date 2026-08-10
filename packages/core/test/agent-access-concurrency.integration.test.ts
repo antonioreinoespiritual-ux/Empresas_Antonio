@@ -322,4 +322,66 @@ describe("Mutación crítica + auditoría: mismo commit o mismo rollback", () =>
     expect(retry.status).toBe(200);
     expect(retry.body.page?.version).toBe(page.version + 1); // no volvió a incrementar
   });
+
+  // F8 (PLAN-AGENT-API-01, ítems 45-58): "atomicidad de auditoría bajo
+  // carga: toda mutación crítica exitosa tiene su fila de auditoría
+  // correspondiente, sin excepción, verificado con concurrencia real". Los
+  // dos tests de arriba ya prueban la atomicidad de UNA escritura a la vez
+  // — este dispara 40 escrituras realmente concurrentes (20 exitosas sobre
+  // Pages distintas + 20 que compiten por CAS sobre una misma Page, la
+  // mitad de las cuales debe perder) y verifica en conjunto, después de que
+  // todo terminó, que no hay ni un solo caso de "Page nueva sin su
+  // AgentAuditLog" ni "AgentAuditLog sin su Page" bajo carga real.
+  it("bajo 40 escrituras concurrentes reales (exitosas + en conflicto), cada éxito tiene exactamente su AgentAuditLog y ningún conflicto deja huérfanos", async () => {
+    const { apiClientId, apiKeyId } = await createTestAgentIdentity();
+
+    const independentWrites = await Promise.all(
+      Array.from({ length: 20 }, async () => {
+        const { offer, page } = await createTestLandingPage();
+        const requestId = randomUUID();
+        const result = await pages
+          .updateWithVersionAudited(
+            { offerId: offer.id, kind: "LANDING", content: { heroTitle: "Carga concurrente" }, expectedVersion: page.version },
+            { requestId, apiClientId, apiKeyId }
+          )
+          .then(() => "fulfilled" as const)
+          .catch(() => "rejected" as const);
+        return { requestId, expectedOutcome: "success" as const, settled: result };
+      })
+    );
+
+    const { offer: sharedOffer, page: sharedPage } = await createTestLandingPage();
+    const competingWrites = await Promise.all(
+      Array.from({ length: 20 }, async () => {
+        const requestId = randomUUID();
+        const settled = await pages
+          .updateWithVersionAudited(
+            { offerId: sharedOffer.id, kind: "LANDING", content: { heroTitle: "Compitiendo por CAS" }, expectedVersion: sharedPage.version },
+            { requestId, apiClientId, apiKeyId }
+          )
+          .then(() => "fulfilled" as const)
+          .catch((error) => (error instanceof VersionConflictError ? ("rejected" as const) : Promise.reject(error)));
+        return { requestId, settled };
+      })
+    );
+
+    const allResults = [...independentWrites, ...competingWrites];
+    const successfulRequestIds = allResults.filter((r) => r.settled === "fulfilled").map((r) => r.requestId);
+    const failedRequestIds = allResults.filter((r) => r.settled === "rejected").map((r) => r.requestId);
+
+    // Las 20 escrituras independientes debieron tener éxito todas (Pages
+    // distintas, sin contención real entre ellas); de las 20 que compiten
+    // por la misma Page, exactamente una gana el CAS y las otras 19 pierden
+    // — nunca más de una, nunca cero.
+    const successfulCompeting = competingWrites.filter((r) => r.settled === "fulfilled");
+    expect(successfulCompeting).toHaveLength(1);
+    expect(successfulRequestIds).toHaveLength(21); // 20 independientes + 1 ganador de la competencia
+    expect(failedRequestIds).toHaveLength(19);
+
+    const auditEntriesForSuccesses = await prisma.agentAuditLog.findMany({ where: { requestId: { in: successfulRequestIds } } });
+    expect(auditEntriesForSuccesses).toHaveLength(successfulRequestIds.length); // ni uno de más, ni uno de menos
+
+    const auditEntriesForFailures = await prisma.agentAuditLog.findMany({ where: { requestId: { in: failedRequestIds } } });
+    expect(auditEntriesForFailures).toHaveLength(0); // ningún conflicto dejó un AgentAuditLog huérfano
+  });
 });
