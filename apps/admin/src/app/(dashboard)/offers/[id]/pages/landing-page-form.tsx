@@ -52,6 +52,7 @@ export function LandingPageForm({ offerId, page }: { offerId: string; page: Page
       kind: "LANDING",
       slug,
       content: { ...rest, vslEmbedUrl: vslEmbedUrl || undefined },
+      expectedVersion: page?.version,
     });
     show(result.ok ? "Página guardada" : result.error ?? "No se pudo guardar", result.ok ? "success" : "danger");
   }

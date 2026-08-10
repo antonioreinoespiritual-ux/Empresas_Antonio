@@ -43,6 +43,7 @@ export function ThankYouPageForm({ offerId, page }: { offerId: string; page: Pag
       offerId,
       kind: "THANK_YOU",
       content: { ...rest, videoUrl: videoUrl || undefined },
+      expectedVersion: page?.version,
     });
     show(result.ok ? "Página guardada" : result.error ?? "No se pudo guardar", result.ok ? "success" : "danger");
   }

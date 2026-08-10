@@ -4,6 +4,9 @@ import {
   PrismaAgentAuditLogRepository,
   PrismaApiClientRepository,
   PrismaApiKeyRepository,
+  PrismaIdempotencyRecordRepository,
+  PrismaPageRepository,
+  PrismaRateLimitBucketRepository,
 } from "@repo/core/infrastructure";
 
 // Composition root de apps/agent-api (F1 — identidad de agentes).
@@ -25,4 +28,12 @@ export const agentAccess = {
   agentAuditLogs: new PrismaAgentAuditLogRepository(),
   hasher: new NodeApiKeyHasher(),
   secretGenerator: new NodeApiKeySecretGenerator(),
+  // F2 — infraestructura transversal (rate limiting, idempotencia, CAS de
+  // Page.version). `pages` está acá porque agent_api_role tiene
+  // SELECT/INSERT/UPDATE sobre "pages" desde F0 — ninguna ruta de
+  // apps/agent-api la usa todavía (eso es F4), pero el mecanismo ya está
+  // completo y probado.
+  rateLimits: new PrismaRateLimitBucketRepository(),
+  idempotency: new PrismaIdempotencyRecordRepository(),
+  pages: new PrismaPageRepository(),
 };

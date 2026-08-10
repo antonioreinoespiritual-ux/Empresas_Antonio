@@ -11,7 +11,10 @@ export * from "./prisma/repositories/page.repository";
 export * from "./prisma/repositories/api-client.repository";
 export * from "./prisma/repositories/api-key.repository";
 export * from "./prisma/repositories/agent-audit-log.repository";
+export * from "./prisma/repositories/rate-limit-bucket.repository";
+export * from "./prisma/repositories/idempotency-record.repository";
 export * from "./agent-access/api-key-crypto";
+export * from "./agent-access/request-hash";
 
 export * from "./payments/wompi/wompi-payment-provider";
 export * from "./payments/paypal/paypal-payment-provider";

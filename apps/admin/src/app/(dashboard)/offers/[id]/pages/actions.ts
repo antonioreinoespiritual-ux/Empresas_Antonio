@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { upsertPageContent } from "@repo/core/application";
+import { savePageContent } from "@repo/core/application";
+import { VersionConflictError } from "@repo/core/domain";
 import type { PageKind, PageStatus } from "@repo/core/domain";
 import { commerce } from "@/lib/commerce";
 import { requireAdminSession } from "@/lib/require-admin-session";
@@ -11,13 +12,21 @@ export async function savePageAction(input: {
   kind: PageKind;
   slug?: string | null;
   content: unknown;
-}): Promise<{ ok: boolean; error?: string }> {
+  /** undefined = primer guardado (la Page todavía no existe). */
+  expectedVersion?: number;
+}): Promise<{ ok: boolean; error?: string; conflict?: boolean }> {
   await requireAdminSession();
   try {
-    await upsertPageContent(commerce, input);
+    await savePageContent(commerce, input);
     revalidatePath(`/offers/${input.offerId}/pages`);
     return { ok: true };
   } catch (error) {
+    if (error instanceof VersionConflictError) {
+      // Otro proceso (otra pestaña, otro admin, un agente) ya escribió esta
+      // Page desde que se cargó el formulario — nunca se pisa a ciegas.
+      revalidatePath(`/offers/${input.offerId}/pages`);
+      return { ok: false, conflict: true, error: "Esta página fue modificada por otro proceso. Recargá para ver los cambios antes de volver a guardar." };
+    }
     return { ok: false, error: error instanceof Error ? error.message : "No se pudo guardar" };
   }
 }

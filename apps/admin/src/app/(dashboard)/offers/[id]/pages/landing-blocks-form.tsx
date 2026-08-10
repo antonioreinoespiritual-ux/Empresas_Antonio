@@ -124,7 +124,7 @@ export function LandingBlocksForm({ offerId, page }: { offerId: string; page: Pa
       return;
     }
     setIsSubmitting(true);
-    const result = await savePageAction({ offerId, kind: "LANDING", slug, content: { blocks } });
+    const result = await savePageAction({ offerId, kind: "LANDING", slug, content: { blocks }, expectedVersion: page?.version });
     setIsSubmitting(false);
     if (!result.ok) {
       setError(result.error ?? "No se pudo guardar");
