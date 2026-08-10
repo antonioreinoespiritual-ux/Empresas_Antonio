@@ -2,32 +2,39 @@ import { NextResponse } from "next/server";
 import { authorizeAgentAction, type AgentPrincipal } from "@repo/core/domain";
 import { authenticateIncomingRequest, checkRateLimit, denialStatusCode, recordAgentAuditLog, resolveRequestId, type RateLimitCheck } from "./agent-auth";
 
-// Scope único de lectura para todos los recursos de negocio de F3 (Products,
-// Offers, Pages). F1 dejó `scopes` como string[] libre sin ningún consumidor
-// real; whoami (F1) no exige ninguno porque es introspección de la propia
-// identidad. F3 es la primera vez que una ApiKey lee datos de negocio, así
-// que es la primera vez que ese mecanismo se usa de verdad — ver
-// docs/roadmap/agent-access-layer.md para la decisión completa. Ninguna
-// ApiKey emitida antes de F3 tiene este scope; hay que reemitir con
-// `--scopes read` (manage-agent-clients.mjs) para poder usar estas rutas.
+// F1 dejó `scopes` como string[] libre sin ningún consumidor real — whoami
+// no exige ninguno porque es introspección de la propia identidad. "read"
+// (F3) fue el primer consumidor real; "write" (F4) es el segundo, para las
+// mutaciones de Page. Ver docs/roadmap/agent-access-layer.md. Ninguna
+// ApiKey emitida antes de F3/F4 tiene estos scopes — hay que reemitir con
+// `--scopes read,write` (manage-agent-clients.mjs) según lo que necesite.
 export const READ_SCOPE = "read";
+export const WRITE_SCOPE = "write";
 
-/**
- * Punto único de autenticación+autorización+rate-limit para las rutas de
- * solo lectura de F3 — mismo patrón que whoami (F1), con el chequeo de
- * scope agregado. Nunca acota por `allowedOfferIds` (instrucción explícita
- * de Antonio: la lectura de catálogo no está restringida por Offer, a
- * diferencia de lo que hará la escritura en F4).
- */
-export async function requireAgentRead(params: {
+interface RequireAgentAccessParams {
   request: Request;
+  method: string;
   resourceType: string;
   routeKey: string;
   rateLimit: { limit: number; windowMs: number };
-}): Promise<
+  scope: string;
+  isWrite: boolean;
+  /** Presente = la acción está acotada a una Offer puntual (allowedOfferIds). */
+  offerId?: string;
+}
+
+type RequireAgentAccessResult =
   | { ok: true; principal: AgentPrincipal; requestId: string; startedAt: number; rateLimit: RateLimitCheck }
-  | { ok: false; response: NextResponse }
-> {
+  | { ok: false; response: NextResponse };
+
+/**
+ * Punto único de autenticación+autorización+rate-limit para apps/agent-api.
+ * `requireAgentRead`/`requireAgentWrite` son wrappers finos de esto con el
+ * scope e isWrite ya fijados. Retrofit F3 (PLAN-AGENT-API-01): ahora sí
+ * acota por `allowedOfferIds` cuando el llamador pasa `offerId` — antes
+ * F3 no lo hacía (decisión revisada, ver roadmap).
+ */
+export async function requireAgentAccess(params: RequireAgentAccessParams): Promise<RequireAgentAccessResult> {
   const startedAt = Date.now();
   const requestId = resolveRequestId(params.request);
   const { result } = await authenticateIncomingRequest(params.request.headers.get("authorization"));
@@ -39,7 +46,7 @@ export async function requireAgentRead(params: {
         requestId,
         apiClientId: result.apiClientId,
         apiKeyId: result.apiKeyId ?? null,
-        method: "GET",
+        method: params.method,
         resourceType: params.resourceType,
         statusCode,
         latencyMs: Date.now() - startedAt,
@@ -57,13 +64,13 @@ export async function requireAgentRead(params: {
 
   const { principal } = result;
 
-  const authz = authorizeAgentAction(principal, { scope: READ_SCOPE, isWrite: false });
+  const authz = authorizeAgentAction(principal, { scope: params.scope, isWrite: params.isWrite, offerId: params.offerId });
   if (!authz.ok) {
     await recordAgentAuditLog({
       requestId,
       apiClientId: principal.apiClientId,
       apiKeyId: principal.apiKeyId,
-      method: "GET",
+      method: params.method,
       resourceType: params.resourceType,
       statusCode: denialStatusCode(authz.reason),
       latencyMs: Date.now() - startedAt,
@@ -90,7 +97,7 @@ export async function requireAgentRead(params: {
       requestId,
       apiClientId: principal.apiClientId,
       apiKeyId: principal.apiKeyId,
-      method: "GET",
+      method: params.method,
       resourceType: params.resourceType,
       statusCode: 429,
       latencyMs: Date.now() - startedAt,
@@ -108,8 +115,29 @@ export async function requireAgentRead(params: {
   return { ok: true, principal, requestId, startedAt, rateLimit };
 }
 
-/** Respuesta 200 uniforme (headers de F1/F2) para las rutas de F3. */
-export function agentReadResponse(requestId: string, body: unknown, init?: { status?: number }) {
+export function requireAgentRead(params: {
+  request: Request;
+  resourceType: string;
+  routeKey: string;
+  rateLimit: { limit: number; windowMs: number };
+  offerId?: string;
+}): Promise<RequireAgentAccessResult> {
+  return requireAgentAccess({ ...params, method: "GET", scope: READ_SCOPE, isWrite: false });
+}
+
+export function requireAgentWrite(params: {
+  request: Request;
+  method: string;
+  resourceType: string;
+  routeKey: string;
+  rateLimit: { limit: number; windowMs: number };
+  offerId?: string;
+}): Promise<RequireAgentAccessResult> {
+  return requireAgentAccess({ ...params, scope: WRITE_SCOPE, isWrite: true });
+}
+
+/** Respuesta uniforme (headers de F1/F2) para las rutas de apps/agent-api. */
+export function agentApiResponse(requestId: string, body: unknown, init?: { status?: number }) {
   return NextResponse.json(body, {
     status: init?.status ?? 200,
     headers: { "Cache-Control": "no-store", "X-Request-Id": requestId },

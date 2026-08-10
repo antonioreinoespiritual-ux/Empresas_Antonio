@@ -1,11 +1,8 @@
 import { agentAccess } from "@/lib/agent-access";
 import { recordAgentAuditLog } from "@/lib/agent-auth";
-import { agentReadResponse, requireAgentRead } from "@/lib/require-agent-read";
+import { parsePageLimit } from "@/lib/pagination";
+import { agentApiResponse, requireAgentRead } from "@/lib/require-agent-access";
 
-// F3 — lectura de catálogo. Rate limit propio y más laxo que whoami (F1):
-// un agente "moviéndose libremente" por el catálogo pagina/lista más veces
-// que consulta su propia identidad; el número es arbitrario, la garantía
-// atómica (F2) es lo que importa.
 const PRODUCTS_LIST_RATE_LIMIT = { limit: 60, windowMs: 60_000 };
 
 export async function GET(request: Request) {
@@ -18,7 +15,12 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   const { principal, requestId, startedAt } = auth;
-  const products = await agentAccess.products.list();
+  const { searchParams } = new URL(request.url);
+  const { items: products, nextCursor } = await agentAccess.products.listForAgent({
+    cursor: searchParams.get("cursor") ?? undefined,
+    limit: parsePageLimit(searchParams.get("limit")),
+    allowedOfferIds: principal.allowedOfferIds,
+  });
 
   await recordAgentAuditLog({
     requestId,
@@ -31,8 +33,9 @@ export async function GET(request: Request) {
     outcome: "read",
   });
 
-  return agentReadResponse(requestId, {
+  return agentApiResponse(requestId, {
     products,
+    nextCursor,
     rateLimit: { limit: auth.rateLimit.limit, remaining: auth.rateLimit.remaining },
   });
 }

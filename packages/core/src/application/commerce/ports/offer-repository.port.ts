@@ -1,4 +1,5 @@
 import type { Offer, PaymentProviderType, Price, PriceInterval, ThemeId } from "../../../domain";
+import type { CursorPaginationInput, PaginatedResult } from "../../shared/paginated-result";
 
 export interface OfferWithPrices extends Offer {
   prices: Price[];
@@ -33,6 +34,11 @@ export interface UpdateOfferInput {
   themeId?: ThemeId;
 }
 
+export interface ListOffersForAgentInput extends CursorPaginationInput {
+  /** null = sin restricción; array = solo estas Offers (F3 retrofit, PLAN-AGENT-API-01). */
+  allowedOfferIds: string[] | null;
+}
+
 export interface OfferRepository {
   findById(offerId: string): Promise<OfferWithPrices | null>;
   list(): Promise<OfferListItem[]>;
@@ -41,4 +47,6 @@ export interface OfferRepository {
   setActive(offerId: string, isActive: boolean): Promise<void>;
   addPrice(offerId: string, price: CreatePriceInput): Promise<Price>;
   removePrice(priceId: string): Promise<void>;
+  /** Variante para apps/agent-api: paginada y acotada por allowedOfferIds — list() sigue sin cambios para apps/admin. */
+  listForAgent(input: ListOffersForAgentInput): Promise<PaginatedResult<OfferListItem>>;
 }

@@ -10,6 +10,7 @@ export * from "./catalog/ports/product-repository.port";
 export * from "./content/ports/page-repository.port";
 export * from "./shared/mailer.port";
 export * from "./shared/audit-actor";
+export * from "./shared/paginated-result";
 export * from "./agent-access/ports/api-client-repository.port";
 export * from "./agent-access/ports/api-key-repository.port";
 export * from "./agent-access/ports/agent-audit-log-repository.port";

@@ -6,7 +6,7 @@ import {
   RateLimitExceededError,
   VersionConflictError,
 } from "../src/domain";
-import { enforceRateLimit, executeAgentPageUpdate, savePageContent, withIdempotency } from "../src/application";
+import { enforceRateLimit, executeAgentPageWrite, savePageContent, withIdempotency } from "../src/application";
 import {
   NodeApiKeyHasher,
   PrismaApiClientRepository,
@@ -276,13 +276,13 @@ describe("Mutación crítica + auditoría: mismo commit o mismo rollback", () =>
     expect(untouched?.version).toBe(page.version);
   });
 
-  it("executeAgentPageUpdate (rate limit + idempotencia + CAS + auditoría) compone las 4 garantías en una sola llamada", async () => {
+  it("executeAgentPageWrite (rate limit + idempotencia + CAS + auditoría) compone las 4 garantías en una sola llamada", async () => {
     const { offer, page } = await createTestLandingPage();
     const { apiClientId, apiKeyId } = await createTestAgentIdentity();
     const idempotencyKey = randomUUID();
-    const payload = { offerId: offer.id, kind: "LANDING" as const, content: { heroTitle: "Vía executeAgentPageUpdate" }, expectedVersion: page.version };
+    const payload = { offerId: offer.id, kind: "LANDING" as const, content: { heroTitle: "Vía executeAgentPageWrite" }, expectedVersion: page.version };
 
-    const result = await executeAgentPageUpdate(
+    const result = await executeAgentPageWrite(
       { pages, rateLimits, idempotency },
       {
         requestId: randomUUID(),
@@ -304,7 +304,7 @@ describe("Mutación crítica + auditoría: mismo commit o mismo rollback", () =>
     // Reintentar con la misma key + mismo payload (p. ej. el cliente no
     // recibió la respuesta y reintenta) devuelve el mismo resultado
     // cacheado, sin volver a incrementar version.
-    const retry = await executeAgentPageUpdate(
+    const retry = await executeAgentPageWrite(
       { pages, rateLimits, idempotency },
       {
         requestId: randomUUID(),

@@ -1,5 +1,5 @@
 import type { ThemeId as PrismaThemeId } from "@prisma/client";
-import type { CreateOfferInput, CreatePriceInput, OfferRepository, UpdateOfferInput } from "../../../application";
+import type { CreateOfferInput, CreatePriceInput, ListOffersForAgentInput, OfferRepository, UpdateOfferInput } from "../../../application";
 import {
   assertEnabledProvidersAreCompatible,
   DEFAULT_THEME_ID,
@@ -96,6 +96,23 @@ export class PrismaOfferRepository implements OfferRepository {
         productName: product.name,
       })
     );
+  }
+
+  async listForAgent(input: ListOffersForAgentInput) {
+    const where = input.allowedOfferIds === null ? undefined : { id: { in: input.allowedOfferIds } };
+    const rows = await prisma.offer.findMany({
+      where,
+      include: { prices: true, product: { select: { name: true } } },
+      orderBy: { id: "asc" },
+      take: input.limit + 1,
+      ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+    });
+    const hasMore = rows.length > input.limit;
+    const page = hasMore ? rows.slice(0, input.limit) : rows;
+    const items = page.map(({ product, prices, ...offer }) =>
+      toDomainOffer({ ...offer, prices: prices.map(toDomainPrice), productName: product.name })
+    );
+    return { items, nextCursor: hasMore ? page.at(-1)?.id ?? null : null };
   }
 
   async create(input: CreateOfferInput) {

@@ -1,13 +1,15 @@
 import { agentAccess } from "@/lib/agent-access";
 import { recordAgentAuditLog } from "@/lib/agent-auth";
-import { agentReadResponse, requireAgentRead } from "@/lib/require-agent-read";
+import { parsePageLimit } from "@/lib/pagination";
+import { agentApiResponse, requireAgentRead } from "@/lib/require-agent-access";
 
 const OFFERS_LIST_RATE_LIMIT = { limit: 60, windowMs: 60_000 };
 
-// Sin filtro por allowedOfferIds — instrucción explícita de Antonio: la
-// lectura de catálogo en F3 no está acotada por Offer (a diferencia de la
-// escritura, que sí la respetará en F4). list() ya trae `prices` embebidas
-// (OfferListItem) — no existe un OfferRepository/PriceRepository separado.
+// Retrofit F3 (PLAN-AGENT-API-01): antes esta ruta no filtraba por
+// allowedOfferIds — corregido para que la lista solo incluya las Offers
+// del alcance del ApiClient (null = todas). list() ya trae `prices`
+// embebidas (OfferListItem) — no existe un OfferRepository/PriceRepository
+// separado.
 export async function GET(request: Request) {
   const auth = await requireAgentRead({
     request,
@@ -18,7 +20,12 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   const { principal, requestId, startedAt } = auth;
-  const offers = await agentAccess.offers.list();
+  const { searchParams } = new URL(request.url);
+  const { items: offers, nextCursor } = await agentAccess.offers.listForAgent({
+    cursor: searchParams.get("cursor") ?? undefined,
+    limit: parsePageLimit(searchParams.get("limit")),
+    allowedOfferIds: principal.allowedOfferIds,
+  });
 
   await recordAgentAuditLog({
     requestId,
@@ -31,8 +38,9 @@ export async function GET(request: Request) {
     outcome: "read",
   });
 
-  return agentReadResponse(requestId, {
+  return agentApiResponse(requestId, {
     offers,
+    nextCursor,
     rateLimit: { limit: auth.rateLimit.limit, remaining: auth.rateLimit.remaining },
   });
 }

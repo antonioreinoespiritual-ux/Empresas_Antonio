@@ -519,7 +519,17 @@ model Page {
 
   offer Offer @relation(fields: [offerId], references: [id])
 
-  @@unique([offerId, kind])
+  // Variantes A/B (F4 — escritura agentic, PLAN-AGENT-API-01): este
+  // @@unique por sí solo NO evita dos Pages "primarias" (variantLabel NULL)
+  // para el mismo (offerId, kind) — en SQL estándar NULL nunca es igual a
+  // NULL, así que un unique constraint normal deja pasar múltiples NULL.
+  // Ese caso lo cierra un índice único parcial agregado a mano en la
+  // migración (`WHERE "variantLabel" IS NULL`) — Prisma no puede expresar
+  // índices parciales de forma declarativa. Este @@unique sigue siendo
+  // necesario para el caso de variantes reales (variantLabel no nulo): ahí
+  // sí compara por igualdad normal y evita dos variantes con el mismo label
+  // para la misma Offer+kind.
+  @@unique([offerId, kind, variantLabel])
   @@map("pages")
 }
 

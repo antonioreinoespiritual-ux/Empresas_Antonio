@@ -1,15 +1,18 @@
 import { agentAccess } from "@/lib/agent-access";
 import { recordAgentAuditLog } from "@/lib/agent-auth";
-import { agentReadResponse, requireAgentRead } from "@/lib/require-agent-read";
+import { agentApiResponse, requireAgentRead } from "@/lib/require-agent-access";
 
 const OFFER_DETAIL_RATE_LIMIT = { limit: 120, windowMs: 60_000 };
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
+  // offerId conocido desde la URL — el chequeo de allowedOfferIds ocurre
+  // antes de tocar la base (403 offer_not_allowed, retrofit F3).
   const auth = await requireAgentRead({
     request,
     resourceType: "offers",
     routeKey: "offers:detail",
     rateLimit: OFFER_DETAIL_RATE_LIMIT,
+    offerId: params.id,
   });
   if (!auth.ok) return auth.response;
 
@@ -29,8 +32,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
   });
 
   if (!offer) {
-    return agentReadResponse(requestId, { error: "not_found" }, { status: 404 });
+    return agentApiResponse(requestId, { error: "not_found" }, { status: 404 });
   }
 
-  return agentReadResponse(requestId, { offer });
+  return agentApiResponse(requestId, { offer });
 }
