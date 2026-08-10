@@ -28,8 +28,8 @@ describe("parsePageContent(LANDING): acepta legacy y blocks sin forzar migració
   it("valida la forma de bloques cuando el content trae `blocks`", () => {
     const raw = {
       blocks: [
-        { type: "hero", title: "Título", ctaLabel: "Comprar ahora" },
-        { type: "richText", html: "<p>Hola</p>" },
+        { type: "hero", id: "b1", title: "Título", ctaLabel: "Comprar ahora" },
+        { type: "richText", id: "b2", html: "<p>Hola</p>" },
       ],
     };
 
@@ -49,7 +49,7 @@ describe("parsePageContent(LANDING): acepta legacy y blocks sin forzar migració
 describe("toLandingBlocks: proyección de lectura no destructiva", () => {
   it("devuelve los blocks tal cual cuando el content ya está en esa forma", () => {
     const content: LandingPageContent = {
-      blocks: [{ type: "richText", html: "<p>x</p>" }],
+      blocks: [{ type: "richText", id: "b1", html: "<p>x</p>" }],
     };
     expect(toLandingBlocks(content)).toEqual(content.blocks);
   });
@@ -64,9 +64,9 @@ describe("toLandingBlocks: proyección de lectura no destructiva", () => {
     };
 
     expect(toLandingBlocks(content)).toEqual([
-      { type: "hero", title: "Título", subtitle: "Subtítulo", ctaLabel: "Comprar ya" },
-      { type: "vsl", embedUrl: "https://youtube.com/embed/abc", autoplay: false },
-      { type: "richText", html: "<p>Copy existente</p>" },
+      { type: "hero", id: "legacy-hero", title: "Título", subtitle: "Subtítulo", ctaLabel: "Comprar ya" },
+      { type: "vsl", id: "legacy-vsl", embedUrl: "https://youtube.com/embed/abc", autoplay: false },
+      { type: "richText", id: "legacy-richtext", html: "<p>Copy existente</p>" },
     ]);
   });
 
@@ -79,7 +79,7 @@ describe("toLandingBlocks: proyección de lectura no destructiva", () => {
     };
 
     const blocks = toLandingBlocks(content);
-    expect(blocks).toContainEqual({ type: "richText", html: "<p>Solo body</p>" });
+    expect(blocks).toContainEqual({ type: "richText", id: "legacy-richtext", html: "<p>Solo body</p>" });
     expect(blocks).toHaveLength(2);
   });
 
@@ -91,7 +91,9 @@ describe("toLandingBlocks: proyección de lectura no destructiva", () => {
       ctaLabel: "Comprar ahora",
     };
 
-    expect(toLandingBlocks(content)).toEqual([{ type: "hero", title: "Título", subtitle: undefined, ctaLabel: "Comprar ahora" }]);
+    expect(toLandingBlocks(content)).toEqual([
+      { type: "hero", id: "legacy-hero", title: "Título", subtitle: undefined, ctaLabel: "Comprar ahora" },
+    ]);
   });
 });
 

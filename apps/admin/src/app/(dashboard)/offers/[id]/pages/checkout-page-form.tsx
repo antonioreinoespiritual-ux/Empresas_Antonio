@@ -32,7 +32,7 @@ export function CheckoutPageForm({ offerId, page }: { offerId: string; page: Pag
   });
 
   async function onSubmit(values: FormValues) {
-    const result = await savePageAction({ offerId, kind: "CHECKOUT", content: values });
+    const result = await savePageAction({ offerId, kind: "CHECKOUT", content: values, expectedVersion: page?.version });
     show(result.ok ? "Página guardada" : result.error ?? "No se pudo guardar", result.ok ? "success" : "danger");
   }
 

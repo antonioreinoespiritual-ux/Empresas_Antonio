@@ -503,6 +503,17 @@ model Page {
   slug      String?    @unique
   status    PageStatus @default(DRAFT)
   content   Json
+  // Contador de concurrencia optimista (Agent Access Layer — ADR-06). Toda
+  // escritura de contenido incrementa version en el mismo UPDATE que la
+  // modifica (compare-and-swap atómico); nunca se lee, decide y escribe en
+  // pasos separados. El panel admin y la API de agentes comparten el mismo
+  // mecanismo.
+  version   Int        @default(1)
+  // Agrupan variantes A/B sin implementar todavía traffic split ni
+  // conversión (Agent Access Layer, preparado-no-implementado). Ambas nulas
+  // para toda Page que no sea una variante.
+  variantGroupId String?
+  variantLabel   String?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
@@ -510,4 +521,108 @@ model Page {
 
   @@unique([offerId, kind])
   @@map("pages")
+}
+
+// ---------------------------------------------------------------------------
+// Agent Access Layer — identidad y credenciales de agentes externos
+// (Claude/MCP), separadas de AdminUser y User (ARCH-AGENT-API-01).
+// ---------------------------------------------------------------------------
+
+enum ApiClientStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model ApiClient {
+  id              String          @id @default(cuid())
+  name            String
+  description     String?
+  status          ApiClientStatus @default(ACTIVE)
+  forceReadOnly   Boolean         @default(false)
+  // null = todas las Offers; [] = ninguna; array = allow-list explícita.
+  // Comparte alcance entre todas las keys de este cliente — lo que varía
+  // por key es el verbo (scopes), no el alcance de recursos.
+  allowedOfferIds String[]
+  createdByAdminId String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  keys ApiKey[]
+
+  @@map("api_clients")
+}
+
+model ApiKey {
+  id              String    @id @default(cuid())
+  apiClientId     String
+  // Identificador público indexado (se muestra truncado en el panel). El
+  // secreto completo nunca se almacena — solo su hash.
+  keyPrefix       String    @unique
+  secretHash      String
+  scopes          String[]
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  rateLimitOverride Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  client ApiClient @relation(fields: [apiClientId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model AgentAuditLog {
+  id             String   @id @default(cuid())
+  requestId      String
+  apiClientId    String
+  apiKeyId       String?
+  method         String
+  resourceType   String
+  resourceId     String?
+  statusCode     Int
+  latencyMs      Int
+  outcome        String
+  // Resumen redactado de qué cambió — nunca el body crudo ni el header
+  // Authorization.
+  changeSummary  Json?
+  createdAt      DateTime @default(now())
+
+  @@map("agent_audit_logs")
+}
+
+model ApiRateLimitBucket {
+  apiKeyId   String
+  bucketKey  String
+  windowStart DateTime
+  count      Int      @default(0)
+
+  @@id([apiKeyId, bucketKey])
+  @@map("api_rate_limit_buckets")
+}
+
+model PreviewToken {
+  id               String    @id @default(cuid())
+  pageId           String
+  tokenId          String    @unique
+  secretHash       String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdByApiKeyId String?
+  createdAt        DateTime  @default(now())
+
+  @@map("preview_tokens")
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(cuid())
+  apiClientId    String
+  idempotencyKey String
+  requestHash    String
+  responseStatus Int
+  responseBody   Json
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@unique([apiClientId, idempotencyKey])
+  @@map("idempotency_records")
 }
