@@ -932,3 +932,267 @@ en verde en los 7 workspaces — 4 rutas nuevas en `apps/admin`
 agente en el día a día — puede crear clientes, emitir/rotar/revocar keys,
 ajustar `allowedOfferIds`/`forceReadOnly`, suspender un cliente entero, y
 auditar su tráfico, todo desde el panel.
+
+## F7 — OpenAPI y contrato para MCP — ✅ CERRADA (2026-08-10)
+
+Objetivo del plan: "que un MCP nuevo pueda integrarse leyendo solo el
+contrato, nunca el código fuente."
+
+### Qué se construyó
+
+- **`apps/agent-api/src/lib/openapi.ts`**: genera el documento OpenAPI 3.1
+  completo. El único punto donde ya existía un Zod schema real
+  (`content` de LANDING/CHECKOUT/THANK_YOU, `landingBlockSchema`) se
+  reutiliza tal cual vía `zod-to-json-schema` — el resto (parámetros,
+  bodies de blocks/reorder/variants, todas las respuestas) se describe a
+  mano, exactamente como preveía el plan ("más paths escritos a mano"),
+  porque la mayoría de las rutas de F1-F5 valida su body con chequeos
+  manuales, no con `z.object().parse()`.
+- **`GET /openapi.json`** (`apps/agent-api/src/app/openapi.json/route.ts`):
+  sin autenticación — "un schema no es un secreto", evita inventar una
+  verificación de sesión de admin dentro de una app que deliberadamente no
+  tiene Better Auth. `servers[].url` se construye con el origen real de la
+  request (`new URL(request.url).origin`), nunca hardcodeado — el
+  meta-schema oficial de OpenAPI 3.1 exige `format: "uri"` (URI absoluta)
+  en `servers[].url`, y local/staging/producción son 3 dominios distintos
+  (3 proyectos de Vercel separados).
+- **`apps/agent-api/public/docs.html`**: visor estático (Scalar, vía CDN)
+  que lee `/openapi.json` del lado del cliente. A propósito un archivo
+  estático servido tal cual desde `public/`, no una página de React — el
+  propio `next.config.mjs` documenta desde F0 que `apps/agent-api` no
+  expone UI; éste y `/openapi.json` son la única excepción, y ninguno de
+  los dos es "UI de la app" en ese sentido (uno es el contrato, el otro un
+  visor de ese contrato).
+- **`packages/core`**: `landingBlockSchema` y `landingBlocksContentSchema`
+  pasan de privados a `export const` (antes solo su tipo inferido era
+  público) — es el único cambio en `packages/core`, necesario para que el
+  generador de OpenAPI los reutilice sin re-declararlos.
+
+### Verificación
+
+`apps/agent-api` no tenía ninguna infraestructura de pruebas propia hasta
+ahora (todo vivía en `packages/core/test` contra Postgres real) — se
+agregó un `vitest.config.ts` liviano, sin base de datos (el generador de
+OpenAPI es una función pura), en `apps/agent-api/test/openapi.test.ts`:
+
+| Prueba | Qué cubre |
+|---|---|
+| Valida contra el meta-schema oficial de OpenAPI 3.1 | No es una prueba estructural inventada — usa el JSON Schema real publicado en spec.openapis.org (`@apidevtools/openapi-schemas`, vía `@seriousme/openapi-schema-validator`) |
+| Documenta exactamente las rutas y métodos reales | Compara `Object.keys(doc.paths)` contra el inventario real de `route.ts` de `apps/agent-api/src/app/api/v1/agent/**` — atrapa una ruta nueva sin documentar o una documentada que ya no existe |
+| Toda operación autenticada declara `bearerAuth` + al menos un 401 | — |
+| Los 429/503 documentados coinciden con la forma real que produce `agent-auth.ts` | — |
+
+**Hallazgo real durante la implementación, no cosmético**: Ajv (el
+validador JSON Schema más usado en el ecosistema JS) no resuelve
+`$dynamicRef` fuera del objeto raíz en JSON Schema 2020-12 — y el
+meta-schema oficial de OpenAPI 3.1 depende de `$dynamicRef` precisamente
+para permitir que cualquier dialecto de JSON Schema aparezca embebido
+dentro de un Parameter/Response Object. Validar con Ajv "de fábrica"
+contra ese meta-schema producía **falsos negativos reales** (rutas y
+parámetros correctos, marcados como inválidos) en casi todas las
+`parameters`/`responses` anidadas del documento — no un error menor de
+formato. Documentado también en el propio README de
+`@apidevtools/openapi-schemas`. Resuelto reemplazando la validación directa
+por `@seriousme/openapi-schema-validator`, que reescribe esos
+`$dynamicRef` a `$ref` normales antes de compilar — sigue siendo el schema
+oficial de OpenAPI 3.1, no uno relajado a mano.
+
+Smoke test HTTP real contra `apps/agent-api` en local (Postgres 16,
+migraciones aplicadas, base descartada al terminar):
+
+| Caso | Resultado |
+|---|---|
+| `GET /openapi.json` sin `Authorization` | `200`, documento completo |
+| `GET /docs.html` sin `Authorization` | `200`, HTML del visor |
+| `servers[].url` | Refleja el origen real de la request (`http://localhost:3101`, no un placeholder) |
+| `GET /whoami` sin `Authorization` | `401` |
+| `GET /whoami` con una ApiKey real | `200`; la respuesta real, verificada campo por campo contra el schema documentado en `/openapi.json` para ese mismo endpoint, coincide exactamente (mismas claves requeridas, sin claves no documentadas) |
+| `GET /products` con la misma key | `200`; forma real (`products[]`, `nextCursor`, `rateLimit`) coincide con lo documentado |
+
+`pnpm run boundaries`, `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r build`
+en verde en los 7 workspaces (incluye el nuevo `apps/agent-api test`, ahora
+parte del pipeline de ese workspace) — `packages/core` sigue en
+**125/125 tests verdes, 7 skipped**, sin regresiones por el cambio de
+exports.
+
+### Declaración de cierre
+
+**F7 queda formalmente cerrada el 2026-08-10.** Cualquier MCP nuevo puede
+integrarse contra esta API leyendo únicamente `GET /openapi.json` (o su
+visor en `/docs.html`) — nunca necesita abrir el código fuente de
+`apps/agent-api` para saber qué endpoints existen, qué autenticación
+requieren, o qué forma tiene cada request/response.
+
+## F8 — Verificación integral — ✅ CERRADA para todo lo ejecutable sin Antonio (2026-08-10)
+
+El propio plan describe F8 así: "no es donde se escriben las pruebas — la
+mayoría ya se escribieron dentro de F1-F5, cada una junto a la pieza que
+valida. Esta fase es donde se corren todas juntas como gate final, y donde
+ocurren las dos pruebas que no pueden existir antes." De esas dos, una
+(el E2E con una key real) se construyó y se corrió acá; la otra (el MCP
+real de Antonio) es, por definición del propio plan, "Necesita a Antonio"
+— nadie más puede ejecutarla. Ver la sección final de este documento para
+el detalle de qué queda pendiente exclusivamente para él.
+
+### Qué se construyó
+
+- **`scripts/e2e-agent-smoke.mjs`** (nuevo directorio `scripts/` en la raíz
+  del repo, separado de `packages/core/scripts/` porque este no es un
+  script de mantenimiento de una app puntual sino un smoke test HTTP
+  cross-cutting): ejercita el ciclo agentic completo contra una instancia
+  real de `apps/agent-api` — `whoami` → catálogo (`products`, `offers`,
+  `themes`, `block-types`) → crear/obtener una Page de trabajo (variante si
+  la Offer ya tenía una Page primaria, para no arriesgar un 409 en una
+  Offer con contenido real) → agregar un bloque → editarlo → reordenar →
+  emitir preview → publicar → publicar de nuevo (confirma el no-op
+  idempotente) → despublicar → eliminar el bloque agregado (limpieza). Se
+  corrió de punta a punta contra una instancia local real: **18/18 pasos
+  en verde**, incluida la doble verificación de que tanto la rama "crear
+  Page nueva" como la rama "crear variante sobre una Page primaria
+  existente" funcionan (se confirmó cada una por separado, no solo la que
+  tocó ejecutar orgánicamente en la corrida principal).
+- **`packages/core/test/agent-api-role-grants.integration.test.ts`**
+  (nuevo, 12 tests): ejecuta el script REAL de producción
+  (`prisma/agent-access-layer/create_agent_api_role.sql`, sin copiarlo a
+  mano) contra Postgres real, conecta después como `agent_api_role` de
+  verdad, y prueba **la matriz negativa completa por operación** para las
+  10 tablas otorgadas (SELECT/INSERT/UPDATE/DELETE, una por una) más el
+  **default-deny de una tabla nueva sin ningún GRANT**. Limpia el rol y la
+  tabla de prueba al terminar.
+- **`apps/agent-api/test/kill-switch.test.ts`** (nuevo, 7 tests): sin un
+  store de Edge Config real conectado todavía (pendiente, ya señalado en
+  PRs anteriores — ver el cierre de esta sección), se probó el mecanismo
+  en sí con Edge Config mockeado + fake timers: TTL de caché de **15s
+  exactos** (verificado en el límite: cacheado a los 14 999ms, vuelve a
+  consultar a los 15 001ms), **fail-closed real** al fallar la lectura
+  (incluso con un valor cacheado previo distinto — nunca fail-open), y que
+  el respaldo por variable de entorno bloquea de forma independiente sin
+  siquiera consultar Edge Config.
+- **`packages/core/test/agent-access-concurrency.integration.test.ts`**:
+  un test nuevo de auditoría bajo carga real — 40 escrituras concurrentes
+  (20 independientes + 20 compitiendo por CAS sobre la misma Page) y
+  verificación en conjunto de que cada éxito tiene exactamente su
+  `AgentAuditLog` y ningún conflicto deja huérfanos.
+
+### Lo que este plan marca como "no puede existir antes de F8" y su estado real
+
+| Ítem del plan | Estado |
+|---|---|
+| E2E con una key real (no la de seed) | ✅ Hecho — `scripts/e2e-agent-smoke.mjs`, 18/18 en verde |
+| Integración real con el MCP de Antonio | ⛔ Necesita a Antonio — nadie más tiene su MCP real |
+| Kill switch cronometrado (~30s, contra staging real) | ⚠️ Parcial — el mecanismo está probado exhaustivamente (TTL, fail-closed) con Edge Config mockeado; la medición en vivo contra un store real de Vercel Edge Config sigue bloqueada porque ese store todavía no existe (pendiente ya señalado en el PR de F1/F3 retrofit: "Crear y conectar el Edge Config store en el proyecto de Vercel") |
+| Fallo inyectado de Edge Config | ✅ Hecho (vía mock) — fail-closed confirmado, nunca fail-open, con y sin caché previo |
+| Default-deny por tabla nueva | ✅ Hecho — `agent-api-role-grants.integration.test.ts` |
+| Matriz negativa por operación (9-10 tablas) | ✅ Hecho — las 10 tablas realmente otorgadas por el script de producción, no solo las 9 que menciona el plan (el script creció con F5: `preview_tokens`) |
+| Atomicidad de auditoría bajo carga | ✅ Hecho — 40 escrituras concurrentes reales |
+| Ensayo del gate de migración (restauración desde backup real) | ⛔ Necesita a Antonio — requiere su acceso al proyecto de Supabase real; no ejecutable contra una base local descartable |
+
+### Verificación
+
+Pipeline completo con Postgres 16 local (migraciones aplicadas, base
+descartada al terminar): `pnpm run boundaries`, `pnpm -r typecheck`,
+`pnpm -r lint`, `pnpm -r build` en verde en los 7 workspaces.
+`packages/core`: **138/138 tests verdes, 7 skipped** (125 previos + 12 de
+la matriz de grants + 1 de auditoría bajo carga). `apps/agent-api`:
+**11/11 tests verdes** (4 de F7 + 7 de kill switch). El E2E real contra
+una instancia local en vivo: **18/18 pasos**.
+
+### Declaración de cierre
+
+**F8 queda cerrada el 2026-08-10 para todo lo que es ejecutable sin la
+intervención directa de Antonio.** Quedan exactamente dos brechas, ambas
+ya identificadas por el propio plan como "Necesita a Antonio" (el MCP real
+y el ensayo de restauración desde backup de producción) más una tercera
+que depende de una pieza de infraestructura que Antonio todavía no
+conectó (el store de Edge Config real) — ninguna de las tres es un
+descuido de esta sesión, las tres requieren acceso o una decisión que
+solo él tiene. Ver el reporte final de F9 para el detalle completo.
+
+## F9 — Rollout a producción — ⛔ NECESITA A ANTONIO EN SU TOTALIDAD
+
+F0-F8 quedan cerradas (con las excepciones puntuales ya señaladas en cada
+cierre de fase). F9 es la última fase del plan y, por diseño del propio
+plan, es la única donde **no hay nada ejecutable por esta sesión** — el
+plan la describe así: "Todo en esta fase es su decisión: qué Offer usar
+para la primera prueba real, cuándo dar de alta `publish:pages` en la key
+de producción, y el go/no-go final." No es una fase que quedó a medias
+por falta de tiempo; es una fase gateada intencionalmente detrás del
+juicio de Antonio, no de un criterio automático que un agente pueda
+satisfacer.
+
+### Qué necesita hacer Antonio para completar F9
+
+1. **Confirmar que las migraciones de F0-F5 están aplicadas en la base
+   real de Supabase** — en particular `page_variant_label_unique` (F4),
+   la más reciente y la única con un índice único parcial escrito a mano
+   (Prisma no puede generarlo). Señalado como pendiente desde el PR de
+   F1/F3 retrofit.
+2. **Crear y conectar un Edge Config store real** en el proyecto de
+   Vercel de `apps/agent-api`, y fijar la clave `agent_api_kill_switch:
+   false` en él. Sin esto, el kill switch solo tiene su respaldo por
+   variable de entorno (`AGENT_API_KILL_SWITCH`, requiere redeploy) — el
+   mecanismo de Edge Config ya está implementado y probado (F1, F8), solo
+   falta la infraestructura real conectada.
+3. **Confirmar que el ambiente de producción de Vercel de
+   `apps/agent-api` usa el `DATABASE_URL` de `agent_api_role`** (nunca el
+   rol `postgres` que usan `apps/web`/`apps/admin`) — ver
+   `prisma/agent-access-layer/create_agent_api_role.sql`, que ya se
+   verificó línea por línea contra Postgres real en F8.
+4. **Emitir la primera `ApiClient`/`ApiKey` de producción real**, desde
+   `/agents` en `apps/admin` (F6) — decidir el nombre del cliente, si
+   arranca con `allowedOfferIds` acotado a una Offer descartable para la
+   primera prueba o abierto a todas, y qué scopes lleva la primera key
+   (`read` y `write` sin riesgo; añadir `publish:pages` es una decisión
+   suya, no algo que deba estar activo por defecto).
+5. **Configurar su MCP de producción con esa key real** y correr, él
+   mismo, el ciclo básico contra producción: leer catálogo → crear/editar
+   una Page → publicar → despublicar — idealmente sobre una Offer
+   descartable, como sugiere el plan.
+6. **Probar el kill switch en vivo contra producción**: activar
+   `agent_api_kill_switch` en el Edge Config real y confirmar que una
+   request en curso recibe `503` dentro de la ventana esperada (~30s:
+   propagación de Edge Config + hasta 15s de caché local — el mecanismo
+   en sí ya está probado exhaustivamente en F8, esto es la primera vez
+   que se mide contra infraestructura real).
+7. **Revocar esa key de prueba y confirmar que el MCP pierde acceso de
+   inmediato** — cierra el ciclo de prueba antes de emitir la key real de
+   uso diario.
+8. **Ensayo del gate de migración** (ítem de F8 que quedó pendiente por
+   requerir su acceso): restaurar un backup real de Supabase, medir el
+   tiempo de un backfill representativo, y confirmar que una versión
+   anterior de `apps/admin`/`apps/web` sigue funcionando contra el schema
+   ya migrado.
+
+Ninguno de estos 8 puntos requiere volver a tocar código — toda la
+superficie (endpoints, panel, kill switch, auditoría, contrato OpenAPI)
+ya está construida, probada localmente con Postgres real, y en un PR
+abierto contra `main`. Son, en su totalidad, pasos de infraestructura,
+credenciales, y juicio de negocio que le pertenecen a Antonio.
+
+### Resumen de lo entregado en esta sesión (F5-F8, sin pausas intermedias)
+
+Por instrucción explícita de Antonio de avanzar por su cuenta hasta el
+final del plan sin pedir aprobación fase por fase, esta sesión cerró,
+después del merge de F1/F3-retrofit+F4 (PR #16):
+
+- **F5** — Publicación, despublicación y preview con `PreviewToken`.
+- **F6** — Panel `/agents` completo en `apps/admin` (alta, scopes,
+  `allowedOfferIds`, emitir/rotar/revocar keys, suspender clientes, visor
+  de auditoría) — probado con Playwright contra Chromium real, no solo
+  con `curl`.
+- **F7** — `openapi.json` generado (parcialmente desde Zod, el resto a
+  mano) + visor estático — validado contra el meta-schema oficial de
+  OpenAPI 3.1, no una verificación estructural inventada.
+- **F8** — E2E real de 18 pasos, matriz negativa de permisos SQL
+  ejecutando el script real de producción, kill switch probado en su
+  mecanismo exacto (TTL + fail-closed), y auditoría bajo 40 escrituras
+  concurrentes reales.
+
+Cada fase se cerró con el mismo patrón: Postgres 16 real local,
+migraciones aplicadas, smoke test real (HTTP o navegador, nunca solo
+build/typecheck), limpieza completa del entorno, y un PR abierto contra
+`main` con el detalle. Un bug real de HTML inválido (F6, `ConfirmDialog`
+dentro de `<tbody>`) y un falso negativo real de Ajv contra el meta-schema
+de OpenAPI 3.1 (F7) se encontraron y corrigieron en el camino — ninguno
+de los dos era evidente sin correr las pruebas de navegador/validación
+reales que este plan exige.

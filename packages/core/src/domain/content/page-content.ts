@@ -90,7 +90,7 @@ const richTextBlockSchema = z.object({
   html: z.string().min(1),
 });
 
-const landingBlockSchema = z.discriminatedUnion("type", [
+export const landingBlockSchema = z.discriminatedUnion("type", [
   heroBlockSchema,
   vslBlockSchema,
   benefitsBlockSchema,
@@ -103,7 +103,7 @@ const landingBlockSchema = z.discriminatedUnion("type", [
 export type LandingBlock = z.infer<typeof landingBlockSchema>;
 export type LandingBlockType = LandingBlock["type"];
 
-const landingBlocksContentSchema = z.object({
+export const landingBlocksContentSchema = z.object({
   blocks: z.array(landingBlockSchema).min(1),
 });
 
