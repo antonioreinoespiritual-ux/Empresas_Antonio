@@ -932,3 +932,93 @@ en verde en los 7 workspaces — 4 rutas nuevas en `apps/admin`
 agente en el día a día — puede crear clientes, emitir/rotar/revocar keys,
 ajustar `allowedOfferIds`/`forceReadOnly`, suspender un cliente entero, y
 auditar su tráfico, todo desde el panel.
+
+## F7 — OpenAPI y contrato para MCP — ✅ CERRADA (2026-08-10)
+
+Objetivo del plan: "que un MCP nuevo pueda integrarse leyendo solo el
+contrato, nunca el código fuente."
+
+### Qué se construyó
+
+- **`apps/agent-api/src/lib/openapi.ts`**: genera el documento OpenAPI 3.1
+  completo. El único punto donde ya existía un Zod schema real
+  (`content` de LANDING/CHECKOUT/THANK_YOU, `landingBlockSchema`) se
+  reutiliza tal cual vía `zod-to-json-schema` — el resto (parámetros,
+  bodies de blocks/reorder/variants, todas las respuestas) se describe a
+  mano, exactamente como preveía el plan ("más paths escritos a mano"),
+  porque la mayoría de las rutas de F1-F5 valida su body con chequeos
+  manuales, no con `z.object().parse()`.
+- **`GET /openapi.json`** (`apps/agent-api/src/app/openapi.json/route.ts`):
+  sin autenticación — "un schema no es un secreto", evita inventar una
+  verificación de sesión de admin dentro de una app que deliberadamente no
+  tiene Better Auth. `servers[].url` se construye con el origen real de la
+  request (`new URL(request.url).origin`), nunca hardcodeado — el
+  meta-schema oficial de OpenAPI 3.1 exige `format: "uri"` (URI absoluta)
+  en `servers[].url`, y local/staging/producción son 3 dominios distintos
+  (3 proyectos de Vercel separados).
+- **`apps/agent-api/public/docs.html`**: visor estático (Scalar, vía CDN)
+  que lee `/openapi.json` del lado del cliente. A propósito un archivo
+  estático servido tal cual desde `public/`, no una página de React — el
+  propio `next.config.mjs` documenta desde F0 que `apps/agent-api` no
+  expone UI; éste y `/openapi.json` son la única excepción, y ninguno de
+  los dos es "UI de la app" en ese sentido (uno es el contrato, el otro un
+  visor de ese contrato).
+- **`packages/core`**: `landingBlockSchema` y `landingBlocksContentSchema`
+  pasan de privados a `export const` (antes solo su tipo inferido era
+  público) — es el único cambio en `packages/core`, necesario para que el
+  generador de OpenAPI los reutilice sin re-declararlos.
+
+### Verificación
+
+`apps/agent-api` no tenía ninguna infraestructura de pruebas propia hasta
+ahora (todo vivía en `packages/core/test` contra Postgres real) — se
+agregó un `vitest.config.ts` liviano, sin base de datos (el generador de
+OpenAPI es una función pura), en `apps/agent-api/test/openapi.test.ts`:
+
+| Prueba | Qué cubre |
+|---|---|
+| Valida contra el meta-schema oficial de OpenAPI 3.1 | No es una prueba estructural inventada — usa el JSON Schema real publicado en spec.openapis.org (`@apidevtools/openapi-schemas`, vía `@seriousme/openapi-schema-validator`) |
+| Documenta exactamente las rutas y métodos reales | Compara `Object.keys(doc.paths)` contra el inventario real de `route.ts` de `apps/agent-api/src/app/api/v1/agent/**` — atrapa una ruta nueva sin documentar o una documentada que ya no existe |
+| Toda operación autenticada declara `bearerAuth` + al menos un 401 | — |
+| Los 429/503 documentados coinciden con la forma real que produce `agent-auth.ts` | — |
+
+**Hallazgo real durante la implementación, no cosmético**: Ajv (el
+validador JSON Schema más usado en el ecosistema JS) no resuelve
+`$dynamicRef` fuera del objeto raíz en JSON Schema 2020-12 — y el
+meta-schema oficial de OpenAPI 3.1 depende de `$dynamicRef` precisamente
+para permitir que cualquier dialecto de JSON Schema aparezca embebido
+dentro de un Parameter/Response Object. Validar con Ajv "de fábrica"
+contra ese meta-schema producía **falsos negativos reales** (rutas y
+parámetros correctos, marcados como inválidos) en casi todas las
+`parameters`/`responses` anidadas del documento — no un error menor de
+formato. Documentado también en el propio README de
+`@apidevtools/openapi-schemas`. Resuelto reemplazando la validación directa
+por `@seriousme/openapi-schema-validator`, que reescribe esos
+`$dynamicRef` a `$ref` normales antes de compilar — sigue siendo el schema
+oficial de OpenAPI 3.1, no uno relajado a mano.
+
+Smoke test HTTP real contra `apps/agent-api` en local (Postgres 16,
+migraciones aplicadas, base descartada al terminar):
+
+| Caso | Resultado |
+|---|---|
+| `GET /openapi.json` sin `Authorization` | `200`, documento completo |
+| `GET /docs.html` sin `Authorization` | `200`, HTML del visor |
+| `servers[].url` | Refleja el origen real de la request (`http://localhost:3101`, no un placeholder) |
+| `GET /whoami` sin `Authorization` | `401` |
+| `GET /whoami` con una ApiKey real | `200`; la respuesta real, verificada campo por campo contra el schema documentado en `/openapi.json` para ese mismo endpoint, coincide exactamente (mismas claves requeridas, sin claves no documentadas) |
+| `GET /products` con la misma key | `200`; forma real (`products[]`, `nextCursor`, `rateLimit`) coincide con lo documentado |
+
+`pnpm run boundaries`, `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r build`
+en verde en los 7 workspaces (incluye el nuevo `apps/agent-api test`, ahora
+parte del pipeline de ese workspace) — `packages/core` sigue en
+**125/125 tests verdes, 7 skipped**, sin regresiones por el cambio de
+exports.
+
+### Declaración de cierre
+
+**F7 queda formalmente cerrada el 2026-08-10.** Cualquier MCP nuevo puede
+integrarse contra esta API leyendo únicamente `GET /openapi.json` (o su
+visor en `/docs.html`) — nunca necesita abrir el código fuente de
+`apps/agent-api` para saber qué endpoints existen, qué autenticación
+requieren, o qué forma tiene cada request/response.

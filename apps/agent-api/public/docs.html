@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  F7 (PLAN-AGENT-API-01): "un visor estático (Scalar/Redoc) que lee ese
+  JSON del lado del cliente". Archivo estático servido tal cual desde
+  public/ — a propósito no es una página de Next (ver next.config.mjs:
+  apps/agent-api no expone UI de React), solo HTML/JS que en tiempo de
+  carga hace fetch de /openapi.json y renderiza. No requiere autenticación,
+  igual que el propio /openapi.json que consume.
+-->
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Empresas Antonio — Agent Access Layer API</title>
+  </head>
+  <body>
+    <script id="api-reference" data-url="/openapi.json"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>
