@@ -834,3 +834,101 @@ demostrable de punta a punta: leer catálogo (F3) → crear/editar contenido
 con bloques y variantes (F4) → preview → publicar/despublicar (F5) — sin
 ninguna intervención de código ni de base de datos fuera de las rutas HTTP
 ya construidas.
+
+## F6 — Panel de administración de agentes en apps/admin — ✅ CERRADA (2026-08-10)
+
+F1 ya había construido toda la capa de aplicación necesaria
+(`ApiClientRepository`, `ApiKeyRepository`, el use-case `issueApiKey`, el
+tipo `AuditActor`) pensando en que un humano, no solo un agente, terminaría
+gestionando estas identidades. F6 es sobre todo composición de UI sobre esa
+base ya existente, reusando los primitivos de `packages/admin-ui` y las
+convenciones ya establecidas en `offers`/`products`.
+
+### Qué se construyó
+
+- **`apps/admin/src/lib/agent-access.ts`**: composition root nuevo, análogo
+  a `commerce.ts` — corre con el `DATABASE_URL` de rol `postgres` (nunca
+  `agent_api_role`, que no tiene permiso de leer `AgentAuditLog` ni de
+  mutar identidad — ver el comentario en el propio archivo y en
+  `agent-audit-log-repository.port.ts`).
+- **`AgentAuditLogRepository.list()`** (nuevo método, con su
+  `AgentAuditLogRow`/`ListAgentAuditLogInput`): paginación por cursor sobre
+  `agent_audit_logs`, mismo patrón que `listForAgent()` de F3/retrofit.
+  Cubierto por una prueba de integración nueva
+  (`test/agent-audit-log-list.integration.test.ts`, 4 casos: filtro por
+  `apiClientId`, sin filtro, paginación sin duplicar/saltar filas, y
+  `nextCursor` en `null` cuando la última página coincide exactamente con
+  el `limit`).
+- **`/agents`**: listado de `ApiClient` con estado y link al detalle.
+- **`/agents/new`**: alta de cliente — nombre, descripción,
+  `forceReadOnly`, y un selector de 3 estados para `allowedOfferIds`
+  ("todas" / "ninguna" / "específicas") en vez de un array vacío por
+  defecto, porque `null`/`[]`/array-con-ids son 3 estados con significado
+  real en el dominio (ver F1).
+- **`/agents/[id]`**: detalle — `ClientStatusToggle` (kill switch por
+  cliente, con `ConfirmDialog` porque corta acceso real de todas las keys
+  de golpe), `ForceReadOnlyToggle` (checkbox simple, menor consecuencia que
+  suspender), `AllowedOfferIdsEditor`, y la tabla de `ApiKey` con emitir /
+  rotar / revocar.
+- **`IssueKeyDialog`**: el secreto se muestra en claro una única vez; el
+  botón "Cerrar" queda deshabilitado hasta que se marca "Ya copié el
+  secreto" — a diferencia de `ConfirmDialog`, este diálogo no se cierra con
+  Escape ni clic afuera mientras el secreto está visible y sin confirmar.
+  "Rotar" reusa el mismo diálogo (`rotatingKeyId` presente): emite la key
+  nueva y solo entonces revoca la anterior — nunca al revés, para no dejar
+  una ventana sin ninguna key vigente si la emisión fallara.
+- **`/agents/audit`**: visor de `AgentAuditLog` — tráfico real de agentes
+  autenticados o rechazados contra `apps/agent-api`, no las acciones del
+  propio panel de admin (esas ya quedaban auditadas en la tabla `AuditLog`
+  general desde antes de este plan — ver "Bug encontrado" abajo).
+
+### Bug encontrado y corregido durante las pruebas de navegador
+
+`ConfirmDialog` (`packages/admin-ui`) e `IssueKeyDialog` renderizan un
+overlay `position: fixed` como hijo directo del árbol donde se montan. Eso
+es válido en cualquier contenedor normal, pero `ApiKeyRow` los monta como
+hermanos de un `<TableRow>` — es decir, directamente dentro de `<tbody>`,
+donde un `<div>` no es HTML válido (`<tbody>` solo admite `<tr>`). Un test
+de Playwright contra Chromium real expuso la advertencia de hidratación de
+React que un `curl`/smoke test HTTP nunca podría detectar. Corregido
+montando ambos diálogos vía `createPortal(..., document.body)` — el fix se
+hizo en el primitivo compartido `ConfirmDialog` (beneficia también a
+`price-manager.tsx`, que ya lo usaba fuera de una tabla y sigue funcionando
+igual) y en `IssueKeyDialog` (local a `apps/admin`, mismo patrón).
+
+### Verificación
+
+Mismo entorno que F1-F5 (Postgres 16 local, migraciones aplicadas —
+incluye la migración de variantes de F4 —, base descartada al terminar).
+`packages/core`: **125/125 tests verdes, 7 skipped, sin regresiones** (121
+previos + 4 nuevos de `agent-audit-log-list.integration.test.ts`).
+
+Smoke test de navegador real (Playwright + Chromium, sin instalar
+Playwright en el repo — `playwright-core` en un scratchpad ad hoc contra el
+Chromium ya preinstalado del entorno) contra `apps/admin` corriendo en
+local, con un `AdminUser` sembrado vía `scripts/seed-admin.mjs`:
+
+| Caso | Resultado |
+|---|---|
+| Login real + navegar a `/agents` | `200`, listado vacío al inicio |
+| Crear cliente (`allowedOfferIds = null`, "todas") | Redirige a `/agents/:id`, nombre visible |
+| Crear cliente con "Offers específicas" (una Offer seleccionada) | `allowedOfferIds` queda con esa Offer únicamente |
+| Emitir key (`read`+`write`) | Secreto mostrado una vez; "Cerrar" deshabilitado hasta marcar "Ya copié el secreto"; habilitado después |
+| Revocar la key | Pasa a "Revocada" en la tabla, `ConfirmDialog` de por medio |
+| Rotar una key | Emite una nueva y revoca la anterior; verificado directo en Postgres (`revokedAt` no nulo en la vieja, nula en la nueva) — la UI de Next dev tarda un instante extra en reflejarlo sin recargar, la base nunca estuvo en un estado inconsistente |
+| `ForceReadOnlyToggle` / `AllowedOfferIdsEditor` | Cambios persisten tras recargar la página |
+| Suspender / reactivar cliente (`ClientStatusToggle`) | Cambia de estado con `ConfirmDialog`, persiste |
+| `/agents/audit` | Carga sin error (vacío en esta prueba — no se hicieron requests reales de agente en esta sesión de navegador) |
+| Acciones de admin (crear/emitir/revocar) | Quedan en la tabla `AuditLog` general con `actorType: "admin"`, **no** en `AgentAuditLog` — confirmado por consulta directa a Postgres |
+
+`pnpm run boundaries`, `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r build`
+en verde en los 7 workspaces — 4 rutas nuevas en `apps/admin`
+(`/agents`, `/agents/new`, `/agents/[id]`, `/agents/audit`).
+
+### Declaración de cierre
+
+**F6 queda formalmente cerrada el 2026-08-10.** Antonio ya no necesita
+`scripts/manage-agent-clients.mjs` (CLI) para operar el ciclo de vida de un
+agente en el día a día — puede crear clientes, emitir/rotar/revocar keys,
+ajustar `allowedOfferIds`/`forceReadOnly`, suspender un cliente entero, y
+auditar su tráfico, todo desde el panel.

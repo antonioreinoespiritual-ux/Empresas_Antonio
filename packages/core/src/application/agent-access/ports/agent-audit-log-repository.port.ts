@@ -12,6 +12,17 @@ export interface AgentAuditLogEntry {
   changeSummary?: unknown;
 }
 
+export interface AgentAuditLogRow extends AgentAuditLogEntry {
+  id: string;
+  createdAt: Date;
+}
+
+export interface ListAgentAuditLogInput {
+  apiClientId?: string;
+  cursor?: string;
+  limit: number;
+}
+
 /**
  * Auditoría de lo que un agente YA autenticado hace a través de
  * apps/agent-api. Requiere apiClientId resuelto — los intentos que no
@@ -21,4 +32,10 @@ export interface AgentAuditLogEntry {
  */
 export interface AgentAuditLogRepository {
   record(entry: AgentAuditLogEntry): Promise<void>;
+  /**
+   * F6 — visor en apps/admin, nunca en apps/agent-api: `agent_api_role` no
+   * tiene SELECT sobre "agent_audit_logs" (F0, GRANT solo INSERT) — leer
+   * este log requiere la identidad de `postgres` que ya usa apps/admin.
+   */
+  list(input: ListAgentAuditLogInput): Promise<{ items: AgentAuditLogRow[]; nextCursor: string | null }>;
 }
