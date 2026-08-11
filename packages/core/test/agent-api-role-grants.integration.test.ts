@@ -169,14 +169,19 @@ describe("agent_api_role: matriz negativa por operación, tabla por tabla (F8)",
     await expectDenied(() => agentPrisma.$executeRawUnsafe(`DELETE FROM "pages" WHERE id = $1`, seeded.pageId));
   });
 
-  it("agent_audit_logs: INSERT sí, SELECT/UPDATE/DELETE no", async () => {
+  it("agent_audit_logs: INSERT/SELECT sí, UPDATE/DELETE no", async () => {
+    // SELECT no es para que apps/agent-api lea su propio historial (ninguna
+    // ruta lo hace) — es un requisito de Postgres para el RETURNING que
+    // Prisma siempre agrega a `.create()`. Sin este SELECT, todo INSERT vía
+    // Prisma fallaba con "permission denied" (hallado en producción real, F9).
     await agentPrisma.$executeRawUnsafe(
       `INSERT INTO "agent_audit_logs" (id, "requestId", "apiClientId", method, "resourceType", "statusCode", "latencyMs", outcome) VALUES ($1,$2,$3,'GET','test',200,1,'ok')`,
       randomUUID(),
       randomUUID(),
       seeded.clientId
     );
-    await expectDenied(() => agentPrisma.$queryRawUnsafe(`SELECT * FROM "agent_audit_logs" WHERE "apiClientId" = $1`, seeded.clientId));
+    const rows = await agentPrisma.$queryRawUnsafe(`SELECT * FROM "agent_audit_logs" WHERE "apiClientId" = $1`, seeded.clientId);
+    expect(Array.isArray(rows)).toBe(true);
     await expectDenied(() => agentPrisma.$executeRawUnsafe(`UPDATE "agent_audit_logs" SET outcome = 'x' WHERE "apiClientId" = $1`, seeded.clientId));
     await expectDenied(() => agentPrisma.$executeRawUnsafe(`DELETE FROM "agent_audit_logs" WHERE "apiClientId" = $1`, seeded.clientId));
   });
@@ -210,7 +215,7 @@ describe("agent_api_role: matriz negativa por operación, tabla por tabla (F8)",
     await adminPrisma.$executeRawUnsafe(`DELETE FROM "preview_tokens" WHERE "tokenId" = $1`, tokenId);
   });
 
-  it("idempotency_records: SELECT/INSERT sí, UPDATE/DELETE no", async () => {
+  it("idempotency_records: SELECT/INSERT/UPDATE sí, DELETE no", async () => {
     const idempotencyKey = `f8-grants-${randomUUID()}`;
     await agentPrisma.$executeRawUnsafe(
       `INSERT INTO "idempotency_records" (id, "apiClientId", "idempotencyKey", "requestHash", "responseStatus", "responseBody", "expiresAt") VALUES ($1,$2,$3,'hash',200,'{}'::jsonb, now() + interval '1 day')`,
@@ -220,9 +225,12 @@ describe("agent_api_role: matriz negativa por operación, tabla por tabla (F8)",
     );
     const rows = await agentPrisma.$queryRawUnsafe(`SELECT * FROM "idempotency_records" WHERE "idempotencyKey" = $1`, idempotencyKey);
     expect(Array.isArray(rows)).toBe(true);
-    await expectDenied(() =>
-      agentPrisma.$executeRawUnsafe(`UPDATE "idempotency_records" SET "responseStatus" = 500 WHERE "idempotencyKey" = $1`, idempotencyKey)
-    );
+    // UPDATE es necesario en runtime real: with-idempotency.use-case.ts
+    // finaliza la reserva con el resultado real de la mutación (patrón
+    // reserva→ejecuta→finaliza) — descubierto en producción real (F9)
+    // cuando el script original solo otorgaba SELECT+INSERT y toda
+    // escritura exitosa terminaba en 500 al no poder finalizar su registro.
+    await agentPrisma.$executeRawUnsafe(`UPDATE "idempotency_records" SET "responseStatus" = 500 WHERE "idempotencyKey" = $1`, idempotencyKey);
     await expectDenied(() => agentPrisma.$executeRawUnsafe(`DELETE FROM "idempotency_records" WHERE "idempotencyKey" = $1`, idempotencyKey));
     await adminPrisma.$executeRawUnsafe(`DELETE FROM "idempotency_records" WHERE "idempotencyKey" = $1`, idempotencyKey);
   });
