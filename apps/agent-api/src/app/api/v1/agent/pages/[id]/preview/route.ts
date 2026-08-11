@@ -61,7 +61,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
     outcome: "preview_issued",
   });
 
-  const previewBaseUrl = process.env.APP_BASE_URL ?? "http://localhost:3000";
+  // `||`, no `??`: una APP_BASE_URL configurada pero vacía (string "") debe
+  // caer al default igual que si no existiera — un host en blanco produce
+  // una URL relativa sin scheme/host (`/preview/...`), no un error visible,
+  // así que pasaba desapercibido hasta que un agente real lo reportó.
+  const previewBaseUrl = process.env.APP_BASE_URL || "http://localhost:3000";
 
   return agentApiResponse(
     requestId,

@@ -26,7 +26,9 @@ const providers: Record<PaymentProviderType, PaymentProvider> = {
     clientSecret: process.env.PAYPAL_CLIENT_SECRET ?? "",
     webhookId: process.env.PAYPAL_WEBHOOK_ID ?? "",
     apiBaseUrl: process.env.PAYPAL_API_BASE_URL ?? "https://api-m.sandbox.paypal.com",
-    webBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
+    // `||`, no `??` — una APP_BASE_URL vacía ("") debe caer al default igual
+    // que si no existiera (ver mismo fix en agent-api/.../preview/route.ts).
+    webBaseUrl: process.env.APP_BASE_URL || "http://localhost:3000",
   }),
 };
 
