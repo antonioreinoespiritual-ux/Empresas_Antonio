@@ -1,111 +1,20 @@
 import { z } from "zod";
 import { DomainError } from "../shared/domain-error";
 import type { PageKind } from "./page.entity";
+import { compositionContentSchema, type CompositionContent } from "./composition/node";
+import { landingBlocksContentSchema, type LandingBlock } from "./landing-blocks";
 
 // El contenido se guarda como JSON (Page.content) para permitir que el admin
 // edite copy/textos sin migraciones; la forma sigue validada por "kind" acá,
 // en domain, sin depender de Prisma/Next — evita tanto la rigidez de columnas
 // por cada campo de marketing como un "content: any" sin ninguna garantía.
-
-// ---------------------------------------------------------------------------
-// LANDING: modelo de bloques estructurados (Frontend + Commerce Experience,
-// Fase A). Cada bloque es una plantilla fija con sus propios campos — el
-// admin arma la página eligiendo y ordenando bloques, nunca escribiendo HTML
-// libre de la página completa (richText es la única excepción deliberada,
-// acotada a un fragmento de copy suelto, igual de confiable que cualquier
-// otro campo hoy: solo lo escribe un admin autenticado).
-// id: identificador estable del bloque dentro de content.blocks[], requerido
-// para que el Agent Access Layer pueda direccionar operaciones (editar/mover/
-// eliminar un bloque puntual) sin depender de su posición en el array
-// (ADR-04). Los bloques existentes en producción se completan con un script
-// de backfill antes de que este campo pase a ser obligatorio en runtime.
-const heroBlockSchema = z.object({
-  type: z.literal("hero"),
-  id: z.string().min(1),
-  title: z.string().min(1),
-  subtitle: z.string().optional(),
-  backgroundImageUrl: z.string().url().optional(),
-  ctaLabel: z.string().min(1).default("Comprar ahora"),
-});
-
-const vslBlockSchema = z.object({
-  type: z.literal("vsl"),
-  id: z.string().min(1),
-  embedUrl: z.string().url(),
-  posterImageUrl: z.string().url().optional(),
-  autoplay: z.boolean().default(false),
-});
-
-const benefitsBlockSchema = z.object({
-  type: z.literal("benefits"),
-  id: z.string().min(1),
-  heading: z.string().optional(),
-  items: z
-    .array(z.object({ icon: z.string().optional(), title: z.string().min(1), description: z.string().default("") }))
-    .min(1),
-});
-
-const testimonialsBlockSchema = z.object({
-  type: z.literal("testimonials"),
-  id: z.string().min(1),
-  heading: z.string().optional(),
-  items: z
-    .array(
-      z.object({
-        quote: z.string().min(1),
-        authorName: z.string().min(1),
-        authorRole: z.string().optional(),
-        avatarUrl: z.string().url().optional(),
-      })
-    )
-    .min(1),
-});
-
-const faqBlockSchema = z.object({
-  type: z.literal("faq"),
-  id: z.string().min(1),
-  heading: z.string().optional(),
-  items: z.array(z.object({ question: z.string().min(1), answer: z.string().min(1) })).min(1),
-});
-
-const guaranteeBlockSchema = z.object({
-  type: z.literal("guarantee"),
-  id: z.string().min(1),
-  title: z.string().min(1),
-  description: z.string().default(""),
-  badgeIcon: z.string().optional(),
-});
-
-const ctaBlockSchema = z.object({
-  type: z.literal("cta"),
-  id: z.string().min(1),
-  headline: z.string().optional(),
-  subtext: z.string().optional(),
-  buttonLabel: z.string().min(1).default("Comprar ahora"),
-});
-
-const richTextBlockSchema = z.object({
-  type: z.literal("richText"),
-  id: z.string().min(1),
-  html: z.string().min(1),
-});
-
-export const landingBlockSchema = z.discriminatedUnion("type", [
-  heroBlockSchema,
-  vslBlockSchema,
-  benefitsBlockSchema,
-  testimonialsBlockSchema,
-  faqBlockSchema,
-  guaranteeBlockSchema,
-  ctaBlockSchema,
-  richTextBlockSchema,
-]);
-export type LandingBlock = z.infer<typeof landingBlockSchema>;
-export type LandingBlockType = LandingBlock["type"];
-
-export const landingBlocksContentSchema = z.object({
-  blocks: z.array(landingBlockSchema).min(1),
-});
+//
+// Los 8 LandingBlock (hero/vsl/benefits/testimonials/faq/guarantee/cta/
+// richText) viven en `./landing-blocks` (no acá) para que
+// `composition/node.ts` pueda reusar `landingBlockSchema` en su nodo
+// `legacyBlock` sin crear un import circular con este archivo. Se
+// re-exportan tal cual más abajo — ningún consumidor existente cambia.
+export { landingBlockSchema, landingBlocksContentSchema, type LandingBlock, type LandingBlockType } from "./landing-blocks";
 
 // Formato previo a los bloques (campos sueltos). Se sigue aceptando en
 // lectura Y escritura sin cambios: la UI de admin todavía lo produce hasta
@@ -122,18 +31,30 @@ const legacyLandingContentSchema = z.object({
 });
 export type LegacyLandingContent = z.infer<typeof legacyLandingContentSchema>;
 
-export type LandingPageContent = z.infer<typeof landingBlocksContentSchema> | LegacyLandingContent;
+export type LandingPageContent = z.infer<typeof landingBlocksContentSchema> | LegacyLandingContent | CompositionContent;
 
 function hasBlocksShape(raw: unknown): boolean {
   return !!raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).blocks);
 }
 
+// "composition-1" es un marcador que ninguna Page legacy/blocks existente
+// puede tener (ver ARCH-LANDING-EDITOR-02) — cero riesgo de reclasificar
+// contenido real ya guardado en cualquiera de las otras dos formas.
+function hasCompositionShape(raw: unknown): boolean {
+  return !!raw && typeof raw === "object" && (raw as Record<string, unknown>).version === "composition-1";
+}
+
 /**
- * Acepta y valida CUALQUIERA de las dos formas — no convierte una en otra.
+ * Acepta y valida CUALQUIERA de las tres formas — no convierte una en otra.
  * La migración de datos existentes ocurre en lectura, bajo demanda, vía
- * `toLandingBlocks` (usado por el futuro renderer de bloques), nunca acá.
+ * `toLandingBlocks` (usado por el renderer de bloques legacy/blocks), nunca
+ * acá. Composition (árbol de nodos) es un formato aparte, sin proyección a
+ * LandingBlock[] — tiene su propio renderer (ARCH-LANDING-EDITOR-02 Fase 2).
  */
 function parseLandingPageContent(raw: unknown): LandingPageContent {
+  if (hasCompositionShape(raw)) {
+    return compositionContentSchema.parse(raw);
+  }
   if (hasBlocksShape(raw)) {
     return landingBlocksContentSchema.parse(raw);
   }
@@ -149,6 +70,13 @@ function parseLandingPageContent(raw: unknown): LandingPageContent {
 export function toLandingBlocks(content: LandingPageContent): LandingBlock[] {
   if ("blocks" in content) {
     return content.blocks;
+  }
+  if ("version" in content) {
+    // Composition no es una lista plana de bloques — no hay proyección con
+    // sentido a LandingBlock[]. Sin este chequeo, el resto de esta función
+    // accedería a campos legacy (heroTitle/bodyHtml) que no existen en
+    // CompositionContent y fallaría con un error confuso en vez de uno claro.
+    throw new DomainError("toLandingBlocks no aplica a contenido en formato composition-1");
   }
   // ids fijos y deterministas (no crypto.randomUUID()): esta proyección corre
   // en cada lectura, y un id que cambiara entre llamadas rompería cualquier

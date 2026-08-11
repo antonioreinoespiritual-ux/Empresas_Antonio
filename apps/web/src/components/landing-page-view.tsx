@@ -18,6 +18,17 @@ export async function LandingPageView({ page }: { page: Page }) {
     return <LandingRenderer blocks={content.blocks} theme={theme} checkoutHref={checkoutHref} />;
   }
 
+  if ("version" in content) {
+    // Composition (ARCH-LANDING-EDITOR-02) todavía no tiene renderer — nada
+    // hoy puede crear una Page con este formato por ninguna vía real (Fase 1
+    // es solo dominio), así que esta rama es inalcanzable en la práctica.
+    // Se deja explícita en vez de dejar que TypeScript la descarte del todo:
+    // si algo cambiara eso antes de que exista CompositionRenderer (Fase 2),
+    // falla acá con un mensaje claro, no con un acceso a un campo legacy
+    // inexistente más abajo.
+    throw new Error("Composition (composition-1) todavía no tiene renderer — pendiente de Fase 2");
+  }
+
   return (
     <main className="py-16">
       <h1 className="text-4xl font-bold">{content.heroTitle}</h1>
