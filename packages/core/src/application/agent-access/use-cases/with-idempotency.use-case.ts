@@ -58,11 +58,28 @@ export async function withIdempotency<T>(
   if (reservation.outcome === "reserved") {
     try {
       const { status, body } = await execute();
-      await deps.idempotency.finalize(reservation.id, { responseStatus: status, responseBody: body });
+      // Si `execute` ya mutó con éxito, un fallo al finalizar la reserva de
+      // idempotencia (p. ej. un permiso SQL faltante — pasó en producción
+      // real, F9) nunca debe convertir una escritura exitosa en un 500: el
+      // caller ya obtuvo el resultado correcto, solo se pierde la garantía
+      // de que un reintento futuro con la misma key lo encuentre cacheado.
+      try {
+        await deps.idempotency.finalize(reservation.id, { responseStatus: status, responseBody: body });
+      } catch (finalizeError) {
+        console.error("No se pudo finalizar la reserva de idempotencia (la mutación sí se ejecutó)", finalizeError);
+      }
       return { status, body, executed: true };
     } catch (error) {
+      // Un fallo al finalizar-con-error nunca debe enmascarar la excepción
+      // real que causó el fallo original — si eso pasa, quien llama ve un
+      // 500 genérico sin poder distinguir la causa real de un problema de
+      // infraestructura de idempotencia (pasó en producción real, F9).
       const message = error instanceof Error ? error.message : String(error);
-      await deps.idempotency.finalize(reservation.id, { responseStatus: 500, responseBody: { error: message } });
+      try {
+        await deps.idempotency.finalize(reservation.id, { responseStatus: 500, responseBody: { error: message } });
+      } catch (finalizeError) {
+        console.error("No se pudo finalizar la reserva de idempotencia tras un error", finalizeError);
+      }
       throw error;
     }
   }
