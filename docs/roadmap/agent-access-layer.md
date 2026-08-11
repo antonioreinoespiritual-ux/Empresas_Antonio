@@ -1215,3 +1215,43 @@ dentro de `<tbody>`) y un falso negativo real de Ajv contra el meta-schema
 de OpenAPI 3.1 (F7) se encontraron y corrigieron en el camino — ninguno
 de los dos era evidente sin correr las pruebas de navegador/validación
 reales que este plan exige.
+
+## Incidente en producción real (2026-08-11): `POST /pages` devolvía 500 sin body
+
+Reportado por el CTO Assistant de Antonio, el primer agente real (no de
+prueba) en usar la API contra producción para intentar publicar una
+landing real. Causa raíz encontrada y corregida el mismo día:
+
+- **`agent_audit_logs` tenía solo `INSERT`, nunca `SELECT`**, por diseño
+  deliberado desde F0 ("el agente no necesita leer su propio historial").
+  Pero Prisma `.create()` siempre agrega `RETURNING` para devolver la fila
+  creada, y Postgres exige `SELECT` sobre cualquier columna en un
+  `RETURNING` — sin importar el motivo. Esto rompía **toda** escritura
+  agentic desde F1; nunca se había detectado porque F8 probó el mismo
+  permiso con SQL crudo sin `RETURNING`, no con la API real de Prisma que
+  usa el código de producción.
+- **`idempotency_records` necesitaba `UPDATE`**, no solo `SELECT`+`INSERT`
+  — el patrón real reserva→ejecuta→finaliza
+  (`with-idempotency.use-case.ts`) actualiza esa misma fila con el
+  resultado final.
+- **Bug propio de enmascaramiento**: si `finalize()` fallaba dentro del
+  `catch` de `withIdempotency`, esa excepción reemplazaba la original
+  antes de poder relanzarla — por eso el 500 no tenía body ni pista real.
+  Corregido: un fallo de `finalize()` ahora solo se loguea (`console.error`),
+  nunca reemplaza la excepción original ni convierte una mutación ya
+  exitosa en un error de vuelta al llamador.
+
+Reproducido localmente con Postgres real y el rol `agent_api_role` exacto
+(no una simulación) antes de corregir nada; los 2 `GRANT` se aplicaron
+primero contra la base real de producción (Supabase, vía MCP) y se
+verificaron con un `POST /pages` real (`201`, Page creada) antes de abrir
+el PR con el código. `create_agent_api_role.sql` y el test de F8 que
+ejecuta ese script contra Postgres real (F8) quedaron corregidos para
+reflejar la causa raíz real, no la intención original del diseño.
+Detalle completo y verificación en el PR #21.
+
+**Lección para el resto del plan**: cualquier tabla donde `agent_api_role`
+tenga un verbo de escritura (INSERT/UPDATE) sin el `SELECT`
+correspondiente es sospechosa de este mismo problema si algún caso de uso
+la escribe vía el API de modelos de Prisma (`.create()`/`.update()`) en
+vez de SQL crudo con columnas de `RETURNING` explícitamente acotadas.
