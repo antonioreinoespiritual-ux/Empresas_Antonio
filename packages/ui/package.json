@@ -7,6 +7,7 @@
     "./primitives": "./src/primitives/index.ts",
     "./themes": "./src/themes/index.ts",
     "./blocks": "./src/blocks/index.ts",
+    "./composition": "./src/composition/index.ts",
     "./tailwind-preset": "./tailwind-preset.cjs"
   },
   "scripts": {

@@ -573,7 +573,66 @@ que lo escriba — así que esta rama es inalcanzable en la práctica.
   cero).
 - **Requiere de mí (Antonio)**: aprobar P-1.
 
-### Fase 2 — Renderer de lectura (`CompositionRenderer`)
+### Fase 2 — Renderer de lectura (`CompositionRenderer`) — ✅ CERRADA (2026-08-14)
+
+**Entregado**: `packages/ui/src/composition/` (nuevo subpath `@repo/ui/composition`):
+un componente por tipo de nodo (`RichTextNode`, `ImageNode`, `VideoNode`,
+`GalleryNode`, `IconNode`, `DividerNode`, `ButtonNode`, `SpacerNode`,
+`ShapeNode`, `LegacyBlockNode`), `RowNode` (recursivo — renderiza tanto una
+row de nivel 2 como, como mucho, una row anidada de nivel 3, terminando
+solo porque el propio schema de dominio no permite un 4º nivel de fila),
+`SectionNode` y `CompositionRenderer` (raíz, mismo contrato que
+`LandingRenderer`: `(Composition, theme) → JSX`, sin efectos secundarios).
+
+- `style-runtime.tsx`: traduce `StyleProps` a CSS real — **nunca clases de
+  Tailwind construidas dinámicamente** (`text-${token}` sería purgado del
+  bundle de producción porque Tailwind no puede ver contenido que vive en
+  Postgres, no en el código fuente); todo pasa por `style` inline o por
+  `var(--color-*)` (las mismas custom properties que `ThemeProvider` ya
+  escribe). Los overrides `responsive.md/lg` se aplican vía un `<style>`
+  Server Component con `@media` scoped por `data-node-id` — sigue siendo
+  CSS derivado de tokens cerrados, nunca CSS libre.
+- `legacyBlock` reusa el dispatch de bloques existente 1:1: se extrajo
+  `LandingBlockDispatch` de `LandingRenderer.tsx` (antes un `switch` inline)
+  para que `LegacyBlockNode` lo reuse sin duplicar el switch de 8 casos —
+  cero reimplementación de Hero/Vsl/Benefits/etc.
+- `image`/`video` (fuente `asset`)/`gallery`: sin Fase 5 (subsistema de
+  medios) todavía no existe ningún `Asset` real que resolver — renderizan
+  un placeholder honesto y accesible (`role="img"` + `aria-label`/altText
+  visible) en vez de simular una imagen que no existe. `video` con fuente
+  `embed` sí es 100% real ya (reusa `VideoFrame`, funciona igual que en un
+  bloque `vsl` clásico).
+- Columnas: cada hijo directo de una row es un ítem de un grid de 12
+  (`grid-template-columns` vía Tailwind `grid-cols-12`), con `gridColumn`
+  calculado en `RowNode` a partir de `style.layout.columnSpan` de cada
+  hijo (default: 12 = ancho completo si no se especifica).
+- `apps/web/src/components/landing-page-view.tsx`: la 3ª rama (antes un
+  `throw` deliberado de Fase 1) ahora renderiza de verdad vía
+  `CompositionRenderer`.
+
+**Verificado**:
+- `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r build` → verde en los 7
+  workspaces.
+- `packages/core`: 160/160 tests siguen verdes (Fase 2 no tocó dominio).
+- **Smoke test real de punta a punta** (mismo criterio que el resto del
+  plan — nunca solo tipos/build): se insertó directamente en Postgres real
+  una Page `PUBLISHED` con una Composition de fixture que ejercita los 11
+  tipos de nodo, incluida una row anidada (`row` dentro de `row`), rich
+  text con 3 estilos distintos combinados en el mismo `h1` (color+tamaño
+  por token, negrita+resaltado), un `legacyBlock` (`cta`) y columnas reales
+  (6+6, luego 4+8 en la fila anidada). Se sirvió con un servidor real de
+  `apps/web` (`next dev`) y se pidió la URL pública por HTTP: **200**, sin
+  errores ni warnings de servidor, con el HTML esperado: `h1` semántico con
+  los 3 tramos de estilo correctos (`color:var(--color-destructive)`,
+  `font-size:36px`, `<mark><strong>`), el link real (`href="https://example.com"`),
+  8 grids de 12 columnas con los spans correctos (`span 6`, `span 4`,
+  `span 8`, `span 12` por defecto), el placeholder de imagen/gallery con su
+  `altText`, y el bloque legacy (`cta`) renderizado con su copy real. 32
+  nodos con `data-node-id` presentes en el DOM (deja el terreno preparado
+  para que Fase 6, el editor visual, pueda direccionar cualquier nodo por
+  id directo en el DOM).
+
+
 - **Objetivo**: dado un árbol válido (construido a mano en fixtures de
   test, no todavía por ningún endpoint), se renderiza correctamente con
   el sistema de temas existente. `landing-page-view.tsx` reconoce la
