@@ -1,6 +1,7 @@
 import { parsePageContent, type LandingPageContent, type Page } from "@repo/core/domain";
 import { getTheme } from "@repo/ui/themes";
 import { LandingRenderer } from "@repo/ui/blocks";
+import { CompositionRenderer } from "@repo/ui/composition";
 import { commerce } from "@/lib/commerce";
 
 // Extraído de (marketing)/[slug]/page.tsx para que /preview/[token] (F5)
@@ -19,14 +20,9 @@ export async function LandingPageView({ page }: { page: Page }) {
   }
 
   if ("version" in content) {
-    // Composition (ARCH-LANDING-EDITOR-02) todavía no tiene renderer — nada
-    // hoy puede crear una Page con este formato por ninguna vía real (Fase 1
-    // es solo dominio), así que esta rama es inalcanzable en la práctica.
-    // Se deja explícita en vez de dejar que TypeScript la descarte del todo:
-    // si algo cambiara eso antes de que exista CompositionRenderer (Fase 2),
-    // falla acá con un mensaje claro, no con un acceso a un campo legacy
-    // inexistente más abajo.
-    throw new Error("Composition (composition-1) todavía no tiene renderer — pendiente de Fase 2");
+    const offer = await commerce.offers.findById(page.offerId);
+    const theme = getTheme(offer?.themeId ?? "premium-light");
+    return <CompositionRenderer composition={content} theme={theme} checkoutHref={checkoutHref} />;
   }
 
   return (
