@@ -960,9 +960,68 @@ cero cambios de backend:
   usaría.
 
 **Requiere de Antonio**: ninguna acción de infraestructura — 6a no agrega
-tablas, env vars ni servicios nuevos. Sí pendiente: **aprobar si se
-arranca 6b** (canvas WYSIWYG/drag-and-drop) ahora que 6a existe, o si se
-prioriza otra fase (7, código; 8, hardening de sanitización/CSP) primero.
+tablas, env vars ni servicios nuevos.
+
+### Fase 6b — Drag-and-drop sobre el árbol — ✅ CERRADA (2026-08-15)
+
+**Decisión tomada** (aprobada explícitamente por Antonio): drag-and-drop
+sobre el mismo árbol expandible de 6a — nunca el canvas visual con render
+en vivo (la otra opción evaluada, de costo varias veces mayor y con más
+riesgo de UX en un primer intento). Los botones ↑/↓ de 6a se conservan
+intactos, nunca se reemplazan — el drag es un agregado, no una migración,
+y queda como respaldo accesible por teclado/lector de pantalla.
+
+**Entregado** — todo en el mismo directorio de 6a, cero cambios de
+dominio/backend:
+- Nueva dependencia `@dnd-kit/core` + `@dnd-kit/sortable` +
+  `@dnd-kit/utilities` en `apps/admin` (~15kb con gzip entre las tres) — la
+  única librería nueva de todo el editor visual, evaluada explícitamente
+  contra el criterio de 6a de no instalar dependencias pesadas sin uso real
+  detrás.
+- `node-tree.tsx`: un solo `DndContext` envuelve todo el árbol; cada
+  contenedor (root, section, row/innerRow) es su propio `SortableContext`
+  acotado a sus hijos directos — el patrón estándar de dnd-kit para listas
+  anidadas multi-contenedor. Cada nodo es arrastrable por un handle "⠿"
+  dedicado (no la fila completa, para no interferir con click-to-select).
+  Una zona de "soltar al final" (`DropEndZone`) por contenedor permite
+  apuntar al final de una lista con más de un hijo; con un solo hijo no
+  hace falta — soltar sobre ese hijo ya inserta dentro del contenedor.
+  `DragOverlay` muestra la etiqueta del nodo mientras se arrastra.
+- `composition-form.tsx`: nuevo `handleDragMove`, que **compone** las
+  mismas tres funciones puras de dominio ya usadas por 6a
+  (`removeNodeFromComposition` + `addNodeToComposition` +
+  `reorderChildrenInComposition`, Fase 3) — mismo padre origen/destino es
+  un solo `reorder`; padre distinto es `remove` + `add` + `reorder` para
+  ubicarlo en la posición exacta soltada. Cero lógica de árbol nueva: la
+  regla de profundidad máxima (P-1) y la de "ningún contenedor sin hijos"
+  (`children.min(1)` del schema) se heredan gratis de esas tres funciones,
+  incluida la protección contra mover un nodo dentro de su propio
+  descendiente (el `remove` deja de existir el destino antes de que el
+  `add` lo intente usar, y revienta con `NotFoundError` en vez de corromper
+  el árbol).
+- **Sin cambios en apps/agent-api ni packages/core**: 6b es una
+  reorganización client-side de las mismas mutaciones que un agente ya
+  puede hacer por API — nunca una superficie nueva de escritura.
+
+**Verificado**:
+- `pnpm run boundaries`/`typecheck`/`lint`/`build` verdes en los 7
+  workspaces; **181/181** tests de `packages/core` sin cambios (6b no toca
+  dominio).
+- **Playwright/Chromium real**, arrastrando con eventos de mouse reales
+  (no `dragTo` nativo — dnd-kit usa pointer events, no HTML5 drag-and-drop)
+  contra la app real corriendo: (1) reordenar dos elementos dentro de la
+  misma fila por drag; (2) mover un elemento de una fila a otra dentro de
+  la misma sección; (3) mover una fila completa (con sus elementos) de una
+  sección a otra; (4) intentar mover el único hijo restante de una fila a
+  otro contenedor — **rechazado correctamente, árbol sin cambios**,
+  confirmando que la protección de "contenedor sin hijos" hereda del
+  schema sin chequeo aparte. Guardado y recarga de página confirman que el
+  árbol resultante (tras los tres movimientos válidos) persiste exacto —
+  coexistiendo con los otros tres editores de la misma Page, mismo
+  criterio de cierre que 6a.
+
+**Requiere de Antonio**: ninguna acción de infraestructura — 6b no agrega
+tablas, env vars ni servicios nuevos.
 
 ### Fase 7 — Modo código para agentes/técnicos
 - **Objetivo**: exponer edición directa del JSON completo de Composition
