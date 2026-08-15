@@ -323,6 +323,94 @@ describe("Mutación crítica + auditoría: mismo commit o mismo rollback", () =>
     expect(retry.body.page?.version).toBe(page.version + 1); // no volvió a incrementar
   });
 
+  // Fase 7 (ARCH-LANDING-EDITOR-02, "modo código" — P-3 resuelta: alcance A,
+  // sin evaluador de expresiones): escribir el JSON completo de Composition
+  // vía executeAgentPageWrite (el mismo camino de PATCH /pages/:id, sin
+  // pasar por los endpoints granulares /nodes) ya funcionaba desde Fase 3 —
+  // este test cierra el único hueco real: nunca se había probado
+  // directamente el rechazo de una Composition inválida enviada como JSON
+  // completo (los tests de Fase 3 solo cubrían rechazo vía /nodes).
+  it("rechaza una Composition inválida enviada como JSON completo (una section sin ninguna row) sin dejar Page ni AgentAuditLog huérfanos", async () => {
+    const { offer, page } = await createTestLandingPage();
+    const { apiClientId, apiKeyId } = await createTestAgentIdentity();
+    const requestId = randomUUID();
+    const invalidComposition = { version: "composition-1", root: [{ type: "section", id: "sec-1", children: [] }] };
+    const payload = { offerId: offer.id, kind: "LANDING" as const, content: invalidComposition, expectedVersion: page.version };
+
+    const result = await executeAgentPageWrite(
+      { pages, rateLimits, idempotency },
+      {
+        requestId,
+        apiClientId,
+        apiKeyId,
+        idempotencyKey: randomUUID(),
+        requestHash: hashRequestPayload(payload),
+        now: new Date(),
+        rateLimit: { limit: 10, windowMs: 60_000 },
+        idempotencyTtlMs: 60_000,
+        page: payload,
+      }
+    );
+
+    expect(result.status).toBe(400);
+    expect(result.body).toMatchObject({ error: "invalid_content" });
+    const auditEntry = await prisma.agentAuditLog.findFirst({ where: { requestId } });
+    expect(auditEntry).toBeNull();
+    const untouched = await pages.findByOfferAndKind(offer.id, "LANDING");
+    expect(untouched?.version).toBe(page.version);
+  });
+
+  it("un agente construye, en una sola escritura de JSON completo, una Composition más elaborada de lo que el editor visual 6a arma en un paso (gate de cierre de Fase 7)", async () => {
+    const { offer, page } = await createTestLandingPage();
+    const { apiClientId, apiKeyId } = await createTestAgentIdentity();
+    // Tres sections con dos rows cada una (una de ellas con una row anidada,
+    // P-1 nivel 4) en una sola llamada — 6a solo permite agregar un nodo por
+    // vez desde la UI, nunca un árbol entero de un saque.
+    const elaborateComposition = {
+      version: "composition-1",
+      root: Array.from({ length: 3 }, (_, sectionIndex) => ({
+        type: "section" as const,
+        id: `sec-${sectionIndex}`,
+        children: [
+          {
+            type: "row" as const,
+            id: `row-${sectionIndex}-0`,
+            children: [
+              { type: "richText" as const, id: `rt-${sectionIndex}`, content: [{ style: "p" as const, children: [{ text: `Sección ${sectionIndex}`, marks: [] }] }] },
+              {
+                type: "row" as const,
+                id: `row-${sectionIndex}-inner`,
+                children: [{ type: "divider" as const, id: `div-${sectionIndex}`, content: {} }],
+              },
+            ],
+          },
+          { type: "row" as const, id: `row-${sectionIndex}-1`, children: [{ type: "spacer" as const, id: `sp-${sectionIndex}`, content: {} }] },
+        ],
+      })),
+    };
+    const payload = { offerId: offer.id, kind: "LANDING" as const, content: elaborateComposition, expectedVersion: page.version };
+
+    const result = await executeAgentPageWrite(
+      { pages, rateLimits, idempotency },
+      {
+        requestId: randomUUID(),
+        apiClientId,
+        apiKeyId,
+        idempotencyKey: randomUUID(),
+        requestHash: hashRequestPayload(payload),
+        now: new Date(),
+        rateLimit: { limit: 10, windowMs: 60_000 },
+        idempotencyTtlMs: 60_000,
+        page: payload,
+      }
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.body.page?.content).toEqual(elaborateComposition);
+    const persisted = await pages.findByOfferAndKind(offer.id, "LANDING");
+    expect(persisted?.content).toEqual(elaborateComposition);
+  });
+
   // F8 (PLAN-AGENT-API-01, ítems 45-58): "atomicidad de auditoría bajo
   // carga: toda mutación crítica exitosa tiene su fila de auditoría
   // correspondiente, sin excepción, verificado con concurrencia real". Los
