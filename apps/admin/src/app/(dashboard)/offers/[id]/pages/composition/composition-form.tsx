@@ -116,6 +116,54 @@ export function CompositionForm({ offerId, page }: { offerId: string; page: Page
     }
   }
 
+  /**
+   * Fase 6b (drag-and-drop): mismo padre origen/destino → reorder in-place
+   * (una sola `reorderChildrenInComposition`). Padre distinto → compone
+   * remove + add + reorder, las tres ya existentes de Fase 3 — nunca una
+   * ruta de mutación paralela. `addNodeToComposition` re-valida el árbol
+   * completo, así que un drop que rompería una regla de contención (p. ej.
+   * una `row` dentro de otra `row` ya anidada) revienta acá con el mismo
+   * error de dominio que ya maneja `handleAdd`, sin tocar `content`.
+   * `removeNodeFromComposition` a su vez rechaza dejar un contenedor sin
+   * hijos (children mínimo 1 en el schema), así que mover el único hijo de
+   * un row/section a otro contenedor falla igual de seguro — no hace falta
+   * un chequeo aparte acá.
+   */
+  function handleDragMove(nodeId: string, sourceParentId: string, destParentId: string, beforeNodeId: string | null) {
+    setError(null);
+    try {
+      if (sourceParentId === destParentId) {
+        const parent = findNode(tree, sourceParentId);
+        const ids = (parent?.children ?? []).map((child) => child.id);
+        const from = ids.indexOf(nodeId);
+        if (from < 0) return;
+        const without = ids.filter((id) => id !== nodeId);
+        const to = beforeNodeId ? without.indexOf(beforeNodeId) : without.length;
+        const next = [...without.slice(0, to), nodeId, ...without.slice(to)];
+        setContent(reorderChildrenInComposition(content, sourceParentId, next));
+        return;
+      }
+
+      const draggedNode = findNode(tree, nodeId);
+      if (!draggedNode) return;
+      const afterRemove = removeNodeFromComposition(content, nodeId);
+      const afterAdd = addNodeToComposition(afterRemove, destParentId, draggedNode);
+      if (!beforeNodeId) {
+        // addNodeToComposition ya insertó al final del contenedor destino — nada más que hacer.
+        setContent(afterAdd);
+        return;
+      }
+      const destParent = findNode(asTree(afterAdd), destParentId);
+      const idsWithDragged = (destParent?.children ?? []).map((child) => child.id);
+      const without = idsWithDragged.filter((id) => id !== nodeId);
+      const to = without.indexOf(beforeNodeId);
+      const next = to < 0 ? [...without, nodeId] : [...without.slice(0, to), nodeId, ...without.slice(to)];
+      setContent(reorderChildrenInComposition(afterAdd, destParentId, next));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo mover el nodo");
+    }
+  }
+
   function handleUpdate(patch: { content?: unknown; style?: unknown }) {
     if (!selectedNodeId) return;
     setError(null);
@@ -164,6 +212,7 @@ export function CompositionForm({ offerId, page }: { offerId: string; page: Page
               onAdd={handleAdd}
               onRemove={handleRemove}
               onMove={handleMove}
+              onDragMove={handleDragMove}
             />
           </div>
           <div className="rounded-md border border-border p-3">
