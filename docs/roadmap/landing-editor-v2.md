@@ -467,12 +467,10 @@ respuesta:
   donde vive Postgres en producción — confirmado vía ADR-015) significa
   cero cuenta/proveedor nuevo, solo un bucket dentro de un proyecto que ya
   existe. Ver Fase 5.
-- **P-3 — Alcance del "modo código"**: ¿alcanza con lectura/escritura
-  directa del JSON de Composition (mi recomendación, cero riesgo nuevo), o
-  querés además el evaluador de expresiones condicionales (§12, alcance
-  mayor, todavía sin ejecución de código real pero más superficie a
-  diseñar/probar)? Puede diferirse sin bloquear el resto — sigue sin
-  resolver, no bloqueó Fase 5.
+- **P-3 — Alcance del "modo código"** — ✅ resuelta: **Opción A**,
+  lectura/escritura directa del JSON de Composition, sin el evaluador de
+  expresiones condicionales (§12) — diferido indefinidamente, se retoma
+  solo si aparece un caso de uso real. Ver Fase 7.
 - **P-4 — `write:media` como scope separado de `write:pages`** — ✅
   resuelta: separado, confirmado por Antonio. Ver Fase 5.
 - **P-5 — Checkout/Thank-you fuera de alcance**: confirmo que esta
@@ -1023,22 +1021,43 @@ dominio/backend:
 **Requiere de Antonio**: ninguna acción de infraestructura — 6b no agrega
 tablas, env vars ni servicios nuevos.
 
-### Fase 7 — Modo código para agentes/técnicos
-- **Objetivo**: exponer edición directa del JSON completo de Composition
-  como superficie "avanzada", más el evaluador de expresiones si P-3 lo
-  pide.
-- **Toca**: posiblemente ninguna ruta nueva (ya existe `PATCH /pages/:id`
-  operando sobre el content completo) — puede ser solo documentación +
-  gate de capability, no código nuevo, salvo que se construya el
-  evaluador.
-- **Depende de**: Fases 1-3, y P-3 resuelta.
-- **Riesgos**: bajos, por diseño (§12/§13).
-- **Pruebas**: casos de rechazo (Composition inválida vía PATCH directo se
-  rechaza igual que hoy).
-- **Gate de cierre**: un agente programador construye una Composition más
-  elaborada que lo que el editor visual 6a expone, sin nueva superficie de
-  riesgo.
-- **Requiere de mí**: resolver P-3.
+### Fase 7 — Modo código para agentes/técnicos — ✅ CERRADA (2026-08-15, sin código nuevo)
+
+**P-3 resuelta** (decisión de Antonio): **Opción A** — lectura/escritura
+directa del JSON completo de Composition, **sin** evaluador de expresiones
+condicionales. Esa mitad queda en "qué NO construir todavía" (§22); se
+retoma solo si aparece un caso de uso real de lógica condicional dentro de
+una landing.
+
+**Hallazgo al cerrar la fase**: la Opción A **ya estaba 100% construida
+desde Fase 3** — `POST /pages` y `PATCH /pages/:id` aceptan el JSON
+completo de `composition-1` sin ningún endpoint nuevo (`performAgentPageWrite`
+→ `executeAgentPageWrite` → `parsePageContent` valida contra el mismo
+`compositionContentSchema` cerrado, sea que el contenido llegue completo o
+nodo-por-nodo vía `/nodes`), y ya estaba documentado en `openapi.ts`. Cero
+código nuevo en `apps/agent-api`/`packages/core` — el objetivo de la fase
+ya estaba cumplido, solo faltaba cerrarla explícitamente y probar
+directamente el único camino que Fase 3 no había ejercitado.
+
+**Entregado** — un solo archivo de tests, `packages/core/test/agent-access-concurrency.integration.test.ts`:
+- Rechazo de una Composition inválida (`section` sin ninguna `row`) enviada
+  como **JSON completo** vía `executeAgentPageWrite` (el mismo camino que
+  `PATCH /pages/:id`, sin pasar por `/nodes`) — Fase 3 ya probaba rechazo
+  vía los endpoints granulares, pero nunca vía escritura de JSON completo
+  directa; confirma `400 invalid_content` y **cero** `Page`/`AgentAuditLog`
+  huérfanos (mismo patrón atómico que el resto de F2).
+- Gate de cierre ejercitado directamente: un agente construye, **en una
+  sola escritura**, una Composition de 3 sections con 2 rows cada una
+  (una con row anidada, P-1 nivel 4) — más elaborada que lo que 6a arma en
+  un paso, porque el editor visual agrega un nodo por vez desde la UI —
+  y se persiste exacta.
+
+**Verificado**: `pnpm run boundaries`/`typecheck`/`lint`/`build` verdes en
+los 7 workspaces; `packages/core` **183/183** tests (181 previos + 2
+nuevos), `apps/agent-api` **11/11** sin cambios (ninguna ruta se tocó).
+
+**Requiere de Antonio**: nada — Fase 7 no agrega tablas, env vars ni
+servicios nuevos.
 
 ### Fase 8 — Hardening de seguridad (deuda preexistente)
 - **Objetivo**: cerrar la brecha real encontrada en el diagnóstico (§1.6),
