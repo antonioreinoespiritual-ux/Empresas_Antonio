@@ -884,30 +884,85 @@ scope separado** de `write:pages`.
    `--scopes ...,write:media` las que lo necesiten, igual que se hizo con
    `write`/`publish:pages` en su momento.
 
-### Fase 6 — Editor visual humano (la fase de mayor esfuerzo)
-- **Objetivo**: `apps/admin` gana una experiencia real para componer
-  Compositions — **sub-faseada** por el riesgo/tamaño ya señalado:
-  - **6a — edición estructurada del árbol** (recomendado empezar aquí):
-    mismo espíritu que `landing-blocks-form.tsx` hoy, extendido a un árbol
-    (expandir/colapsar contenedores, mover nodo por id ya no por índice,
-    formulario de campos por tipo de nodo, selector de tokens de estilo en
-    vez de inputs libres). Sin drag-and-drop todavía.
-  - **6b — canvas visual/WYSIWYG** (evaluar recién con 6a en producción):
-    arrastrar/soltar, preview inline en el propio canvas. Este es
-    potencialmente un proyecto de frontend en sí mismo — no se estima en
-    detalle hasta ver el uso real de 6a.
-- **Toca**: `apps/admin/src/app/(dashboard)/offers/[id]/pages/*`,
-  posible libería de rich text de cliente para 6a (necesita investigación
-  aparte, ninguna está instalada hoy — ver §1.6).
-- **Depende de**: Fases 1-5.
-- **Riesgos**: es la fase con más superficie de UI nueva y la más fácil de
-  sobre-invertir — de ahí la sub-fase.
-- **Pruebas**: Playwright/Chromium real (mismo patrón ya usado para el
-  panel `/agents` en F6 del Agent Access Layer).
-- **Gate de cierre 6a**: un humano compone una landing completa con
-  columnas/media/rich text sin tocar el Agent API, y coexiste sin
-  conflicto con Pages creadas por agentes.
-- **Requiere de mí**: aprobar seguir a 6b después de ver 6a en uso real.
+### Fase 6a — Editor visual humano: edición estructurada del árbol — ✅ CERRADA (2026-08-15)
+
+**Decisión tomada**: sin librería de rich text de cliente (§1.6, "necesita
+investigación aparte") — controles estructurados (toggles de marca, no
+contentEditable/WYSIWYG) sobre el mismo `richTextDocSchema` cerrado de Fase
+4, evitando instalar una dependencia pesada antes de ver uso real. 6b
+(canvas WYSIWYG) sigue exactamente donde estaba: sin arrancar, pendiente de
+aprobación de Antonio tras ver 6a en uso real.
+
+**Entregado** — todo en `apps/admin/src/app/(dashboard)/offers/[id]/pages/composition/`,
+cero cambios de backend:
+- `composition-form.tsx`: estado de la Composition completa en el cliente;
+  **todas** las mutaciones (agregar/actualizar/eliminar/mover nodo) pasan
+  por las mismas funciones puras de dominio que ya usa el Agent Access
+  Layer (`addNodeToComposition`/`updateNodeInComposition`/
+  `removeNodeFromComposition`/`reorderChildrenInComposition`, Fase 3) —
+  nunca una reimplementación paralela de la lógica de árbol. Guarda con el
+  mismo `savePageAction`/CAS de `page.version` que ya usan los demás forms
+  de esta página (`parsePageContent` ya soportaba `composition-1` desde
+  Fase 2/3 — cero cambios de backend para que esto funcionara).
+- `node-tree.tsx`: árbol expandible/colapsable, mover por id (no por
+  índice), menú de "agregar" contextual por tipo de contenedor (section
+  solo admite row; row de nivel 2 admite elemento o una row anidada más;
+  row anidada solo admite elemento — refleja la profundidad máxima de P-1
+  sin un chequeo de profundidad aparte, el propio `addNodeToComposition` la
+  hace cumplir). Sin drag-and-drop (alcance de 6a, según lo planeado).
+- `node-defaults.ts`: un nodo nuevo siempre nace ya válido contra el schema
+  (nunca un placeholder vacío) — necesario porque, a diferencia del editor
+  de bloques legacy, `addNodeToComposition` re-valida el árbol completo en
+  el momento de agregar, no recién al guardar.
+- `node-content-editor.tsx` + `style-editor.tsx`: formulario por tipo de
+  nodo (uno por cada `ElementNode`, más `section`/`row`), selectores sobre
+  el vocabulario cerrado de tokens (`spacingTokenSchema.options`, etc. —
+  una sola fuente de verdad, nunca un catálogo duplicado a mano), incluido
+  `columnSpan` (1-12) cuando el nodo es hijo directo de una row.
+  `legacyBlock` reusa `BlockFields` tal cual (view/edit, no se ofrece en el
+  menú de "agregar nuevo" — scope acotado a componer con las primitivas
+  nuevas).
+- `rich-text-editor.tsx`: bloques (p/h1-h4) con spans editables y toggles
+  de marca (bold/italic/underline/strike/highlight/link/colorToken/
+  sizeToken) sobre el árbol cerrado de `richTextDocSchema` (Fase 4).
+- `asset-picker.tsx`: selector sobre la biblioteca real de Fase 5 (grid de
+  miniaturas, click para elegir) — nunca un input de URL suelta. Usado por
+  image/video/gallery y por `background.imageAssetId` del style editor.
+- `media/actions.ts`: nueva `listAssetsAction` (Server Action, sin
+  paginación — alcanza para el tamaño actual de la biblioteca).
+- `page.tsx`: agrega `<CompositionForm>` como primer editor de la página
+  (arriba de los tres preexistentes — legacy JSON, bloques, Composition
+  conviven, "gana el que se guardó al último", mismo criterio ya
+  documentado para los otros dos), y ensancha el contenedor
+  (`max-w-2xl` → `max-w-5xl`) para el layout de dos columnas
+  árbol+editor.
+
+**Verificado**:
+- `pnpm run boundaries`/`typecheck`/`lint`/`build` verdes en los 7
+  workspaces; **181/181** tests de `packages/core` y **11/11** de
+  `apps/agent-api` sin cambios (6a no toca ni dominio ni agent-api).
+- **Playwright/Chromium real** (mismo patrón que el panel `/agents` de F6
+  del Agent Access Layer), de punta a punta contra la app real corriendo:
+  login como AdminUser real, slug, edición de un span de rich text con
+  marca `bold`, agregar un nodo `image` bajo una row, elegirle un Asset
+  real de la biblioteca vía el picker, mover el nodo con "↑", editar su
+  `columnSpan` a 12, guardar, **recargar la página y confirmar que el
+  árbol completo (section→row→richText+image, con el Asset y el estilo)
+  persiste exactamente igual** — coexistiendo sin romper los otros tres
+  editores de la misma Page (todos muestran el mismo slug y estado
+  `Borrador` tras el guardado). Encontrado y corregido en el camino: el
+  selector de Assets solo cargaba la biblioteca al abrirse, así que un
+  Asset ya asignado se veía como "ninguno seleccionado" hasta abrir el
+  selector una vez — ahora carga al montarse.
+- **Gate de cierre 6a cumplido**: un humano compuso una landing con
+  columnas (`columnSpan`), media real (Asset de Fase 5) y rich text con
+  estilo, sin tocar el Agent API, sobre la misma Page/CAS que un agente
+  usaría.
+
+**Requiere de Antonio**: ninguna acción de infraestructura — 6a no agrega
+tablas, env vars ni servicios nuevos. Sí pendiente: **aprobar si se
+arranca 6b** (canvas WYSIWYG/drag-and-drop) ahora que 6a existe, o si se
+prioriza otra fase (7, código; 8, hardening de sanitización/CSP) primero.
 
 ### Fase 7 — Modo código para agentes/técnicos
 - **Objetivo**: exponer edición directa del JSON completo de Composition
