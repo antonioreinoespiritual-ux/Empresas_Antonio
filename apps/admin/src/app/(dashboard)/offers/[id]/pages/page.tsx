@@ -3,6 +3,7 @@ import { commerce } from "@/lib/commerce";
 import { PageHeader } from "@repo/admin-ui/primitives";
 import { LandingPageForm } from "./landing-page-form";
 import { LandingBlocksForm } from "./landing-blocks-form";
+import { CompositionForm } from "./composition/composition-form";
 import { CheckoutPageForm } from "./checkout-page-form";
 import { ThankYouPageForm } from "./thank-you-page-form";
 
@@ -19,9 +20,10 @@ export default async function OfferPagesPage({ params }: { params: { id: string 
   ]);
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-5xl">
       <PageHeader title={`Páginas de ${offer.name}`} />
       <div className="flex flex-col gap-6">
+        <CompositionForm offerId={offer.id} page={landing} />
         <LandingPageForm offerId={offer.id} page={landing} />
         <LandingBlocksForm offerId={offer.id} page={landing} />
         <CheckoutPageForm offerId={offer.id} page={checkout} />

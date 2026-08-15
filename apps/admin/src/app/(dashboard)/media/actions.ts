@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createMediaUploadUrl, registerAsset } from "@repo/core/application";
-import type { AssetKind } from "@repo/core/domain";
+import type { Asset, AssetKind } from "@repo/core/domain";
 import { getMediaStorage, media } from "@/lib/media";
 import { requireAdminSession } from "@/lib/require-admin-session";
 
@@ -14,6 +14,15 @@ export async function createUploadUrlAction(
   const result = await createMediaUploadUrl({ media: getMediaStorage() }, { kind, contentType });
   if (!result.ok) return { ok: false, error: "Tipo de archivo no soportado" };
   return { ok: true, uploadUrl: result.uploadUrl, path: result.path };
+}
+
+// Fase 6a del editor de landings v2 — usada por el selector de Assets del
+// editor de Composition (image/video/gallery). Sin paginación: alcanza para
+// el tamaño actual de la biblioteca; si crece, es un cambio localizado acá.
+export async function listAssetsAction(): Promise<{ assets: Asset[] }> {
+  await requireAdminSession();
+  const { items } = await media.assets.list({ limit: 100 });
+  return { assets: items };
 }
 
 export async function registerAssetAction(input: {
