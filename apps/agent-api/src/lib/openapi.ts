@@ -1,4 +1,11 @@
-import { checkoutPageContentSchema, landingBlockSchema, landingBlocksContentSchema, thankYouPageContentSchema } from "@repo/core/domain";
+import {
+  checkoutPageContentSchema,
+  compositionContentSchema,
+  compositionNodeSchema,
+  landingBlockSchema,
+  landingBlocksContentSchema,
+  thankYouPageContentSchema,
+} from "@repo/core/domain";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 // F7 (PLAN-AGENT-API-01): "openapi.json generado a partir de los mismos
@@ -111,8 +118,14 @@ const OFFER_SCHEMA = {
 };
 
 const PAGE_CONTENT_SCHEMA = {
-  description: "La forma exacta depende de Page.kind — LANDING acepta bloques estructurados (o el formato legacy de campos sueltos), CHECKOUT/THANK_YOU son objetos fijos.",
-  oneOf: [toJsonSchema(landingBlocksContentSchema), toJsonSchema(checkoutPageContentSchema), toJsonSchema(thankYouPageContentSchema)],
+  description:
+    "La forma exacta depende de Page.kind — LANDING acepta bloques estructurados, el formato legacy de campos sueltos, o una Composition (árbol de nodos, ARCH-LANDING-EDITOR-02); CHECKOUT/THANK_YOU son objetos fijos.",
+  oneOf: [
+    toJsonSchema(landingBlocksContentSchema),
+    toJsonSchema(compositionContentSchema),
+    toJsonSchema(checkoutPageContentSchema),
+    toJsonSchema(thankYouPageContentSchema),
+  ],
 };
 
 const PAGE_SCHEMA = {
@@ -209,6 +222,7 @@ export function buildOpenApiDocument(baseUrl: string) {
         Price: PRICE_SCHEMA,
         Page: PAGE_SCHEMA,
         LandingBlock: toJsonSchema(landingBlockSchema),
+        CompositionNode: toJsonSchema(compositionNodeSchema),
         RateLimitInfo: RATE_LIMIT_INFO_SCHEMA,
       },
     },
@@ -471,6 +485,114 @@ export function buildOpenApiDocument(baseUrl: string) {
           requestBody: {
             required: true,
             content: { "application/json": { schema: { type: "object", required: ["orderedBlockIds"], properties: { orderedBlockIds: { type: "array", items: { type: "string" } } } } } },
+          },
+          responses: {
+            "200": { description: "Reordenado.", content: { "application/json": { schema: { type: "object", required: ["page"], properties: { page: PAGE_SCHEMA } } } } },
+            "400": RESPONSES.BadRequest,
+            "401": RESPONSES.Unauthorized,
+            "403": RESPONSES.Forbidden,
+            "404": RESPONSES.NotFound,
+            "409": RESPONSES.Conflict,
+            "428": RESPONSES.PreconditionRequired,
+            "429": RESPONSES.RateLimited,
+            "503": RESPONSES.KillSwitch,
+          },
+        }),
+      },
+      "/pages/{id}/nodes": {
+        post: bearerSecured({
+          summary:
+            "Agrega un nodo al árbol de una Page en formato Composition (ARCH-LANDING-EDITOR-02, Fase 3). parentNodeId omitido o \"root\" = agrega una section nueva al nivel más alto; cualquier otro id = agrega dentro de ese contenedor (section/row). 400 invalid_content_format si la Page todavía está en formato legacy/blocks.",
+          parameters: [PAGE_ID_PARAM, IF_MATCH_HEADER, IDEMPOTENCY_HEADER],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["node"],
+                  properties: {
+                    parentNodeId: { type: "string", description: 'Default: "root" (las sections del nivel más alto).' },
+                    node: toJsonSchema(compositionNodeSchema),
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Nodo agregado.", content: { "application/json": { schema: { type: "object", required: ["page"], properties: { page: PAGE_SCHEMA } } } } },
+            "400": RESPONSES.BadRequest,
+            "401": RESPONSES.Unauthorized,
+            "403": RESPONSES.Forbidden,
+            "404": RESPONSES.NotFound,
+            "409": RESPONSES.Conflict,
+            "428": RESPONSES.PreconditionRequired,
+            "429": RESPONSES.RateLimited,
+            "503": RESPONSES.KillSwitch,
+          },
+        }),
+      },
+      "/pages/{id}/nodes/{nodeId}": {
+        patch: bearerSecured({
+          summary: "Aplica un patch parcial (solo content/style — nunca type/id/children) a un nodo existente por su id, sin importar la profundidad.",
+          parameters: [PAGE_ID_PARAM, { name: "nodeId", in: "path", required: true, schema: { type: "string" } }, IF_MATCH_HEADER, IDEMPOTENCY_HEADER],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["patch"],
+                  properties: { patch: { type: "object", properties: { content: { type: "object" }, style: { type: "object" } } } },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Nodo actualizado.", content: { "application/json": { schema: { type: "object", required: ["page"], properties: { page: PAGE_SCHEMA } } } } },
+            "400": RESPONSES.BadRequest,
+            "401": RESPONSES.Unauthorized,
+            "403": RESPONSES.Forbidden,
+            "404": RESPONSES.NotFound,
+            "409": RESPONSES.Conflict,
+            "428": RESPONSES.PreconditionRequired,
+            "429": RESPONSES.RateLimited,
+            "503": RESPONSES.KillSwitch,
+          },
+        }),
+        delete: bearerSecured({
+          summary: "Elimina un nodo por su id, sin importar la profundidad.",
+          parameters: [PAGE_ID_PARAM, { name: "nodeId", in: "path", required: true, schema: { type: "string" } }, IF_MATCH_HEADER, IDEMPOTENCY_HEADER],
+          responses: {
+            "200": { description: "Nodo eliminado.", content: { "application/json": { schema: { type: "object", required: ["page"], properties: { page: PAGE_SCHEMA } } } } },
+            "401": RESPONSES.Unauthorized,
+            "403": RESPONSES.Forbidden,
+            "404": RESPONSES.NotFound,
+            "409": RESPONSES.Conflict,
+            "428": RESPONSES.PreconditionRequired,
+            "429": RESPONSES.RateLimited,
+            "503": RESPONSES.KillSwitch,
+          },
+        }),
+      },
+      "/pages/{id}/nodes/reorder": {
+        post: bearerSecured({
+          summary: 'Reordena los hijos directos de un contenedor. parentNodeId omitido o "root" = reordena las sections del nivel más alto.',
+          parameters: [PAGE_ID_PARAM, IF_MATCH_HEADER, IDEMPOTENCY_HEADER],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["orderedNodeIds"],
+                  properties: {
+                    parentNodeId: { type: "string", description: 'Default: "root".' },
+                    orderedNodeIds: { type: "array", items: { type: "string" } },
+                  },
+                },
+              },
+            },
           },
           responses: {
             "200": { description: "Reordenado.", content: { "application/json": { schema: { type: "object", required: ["page"], properties: { page: PAGE_SCHEMA } } } } },
