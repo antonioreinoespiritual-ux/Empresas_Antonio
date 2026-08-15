@@ -742,21 +742,42 @@ solo porque el propio schema de dominio no permite un 4º nivel de fila),
   de punta a punta contra una instancia real.
 - **Requiere de mí**: nada nuevo.
 
-### Fase 4 — Rich text estructurado
+### Fase 4 — Rich text estructurado — ✅ CERRADA (2026-08-15, sin código nuevo)
 - **Objetivo**: el nodo `richText` nuevo (no el legacy) soporta spans con
   múltiples marks dentro del mismo párrafo, serializado sin HTML.
-- **Toca**: dominio (`RichTextDoc` ya definido en Fase 1, aquí se conecta
-  al render + a las rutas de nodo), `packages/ui`.
-- **Depende de**: Fases 1-3 (se escribe/lee por las mismas rutas de nodo,
-  no rutas nuevas).
-- **Riesgos**: bajo — es el schema más nuevo conceptualmente pero el más
-  acotado en superficie.
-- **Pruebas**: casos de marks combinados, link con protocolo inválido
-  rechazado, heading semántico correcto en el HTML de salida.
-- **Gate de cierre**: un agente puede producir un párrafo con 3+ estilos
-  distintos en la misma oración y se renderiza correctamente.
-- **Requiere de mí**: resolver P-3 solo si querés adelantar el evaluador
-  de expresiones ya en esta fase (no recomendado, se puede diferir).
+- **Hallazgo al abrir esta fase**: el objetivo ya estaba completamente
+  entregado como efecto colateral de las Fases 1-3, sin ningún gap —
+  `richTextDocSchema`/`richTextMarkSchema` (Fase 1) ya cubren los 8 marks
+  (`bold`/`italic`/`underline`/`strike`/`highlight`/`link`/`colorToken`/`sizeToken`)
+  combinables libremente por span; `RichTextNode.tsx` (Fase 2) ya serializa
+  cada mark a JSX semántico (nunca HTML libre) y los apila correctamente
+  cuando varios marks caen sobre el mismo span; y las rutas genéricas de
+  nodo de Fase 3 (`POST/PATCH/DELETE .../nodes`) ya escriben/leen `richText`
+  igual que cualquier otro tipo de nodo, sin ruta especial. No se escribió
+  ni modificó código de producción en esta fase — solo verificación.
+- **Verificado**:
+  - Test de dominio ya existente (`composition-content.test.ts`, Fase 1):
+    marks combinados válidos, mark desconocido rechazado, `link` con
+    protocolo inválido (`javascript:`/`data:`) rechazado por
+    `safeLinkUrlSchema`.
+  - **Smoke HTTP real de punta a punta** (nueva, esta fase): un agente crea
+    una Page `composition-1` con un `richText` que combina un heading `h2`
+    y un párrafo de una sola oración con 5 spans, cada uno con una
+    combinación de marks distinta (`bold`; `italic`+`underline`;
+    `highlight`+`strike`; `colorToken`+`sizeToken`; `link`) → intento de
+    agregar un segundo `richText` con un mark `link` de protocolo
+    `javascript:` → **rechazado con `400` real** (mismo `safeLinkUrlSchema`
+    que ya protege `button.href`) → `publish` → HTML servido por
+    `apps/web` inspeccionado directamente, confirmando cada mark render
+    correcto y apilado sobre el mismo span:
+    `<h2 class="...">Subtitulo semantico</h2>`,
+    `<strong>...</strong>`, `<u><em>...</em></u>`, `<s><mark>...</mark></s>`,
+    `<span style="color:var(--color-destructive);font-size:24px">...</span>`,
+    `<a href="https://example.com/oferta" class="underline">...</a>` — los
+    5 estilos distintos en la misma oración, gate de cierre cumplido tal
+    cual está escrito.
+- **Requiere de mí**: nada — P-3 (evaluador de expresiones) sigue diferida,
+  no la pidió nadie en esta fase.
 
 ### Fase 5 — Subsistema de medios
 - **Objetivo**: subir, listar y referenciar imágenes/video reales.
