@@ -1,4 +1,7 @@
-import type { ElementNode } from "@repo/core/domain";
+import type { Asset, ElementNode } from "@repo/core/domain";
+
+/** assetId -> Asset ya resuelto — construido por el caller (apps/web) antes de renderizar, nunca por los nodos mismos (Fase 5, §7). */
+export type AssetMap = Record<string, Asset>;
 
 export type RichTextNodeContent = Extract<ElementNode, { type: "richText" }>;
 export type ImageNodeContent = Extract<ElementNode, { type: "image" }>;

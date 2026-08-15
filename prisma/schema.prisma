@@ -636,3 +636,26 @@ model IdempotencyRecord {
   @@unique([apiClientId, idempotencyKey])
   @@map("idempotency_records")
 }
+
+enum AssetKind {
+  IMAGE
+  VIDEO
+}
+
+// Editor de landings v2, Fase 5 (ARCH-LANDING-EDITOR-02 §7) — biblioteca de
+// medios compartida entre Offers, igual que Theme es un catálogo cerrado y
+// reusable. Sin FK a Offer a propósito. `provider` queda como texto libre
+// ("supabase-storage") en vez de un enum: es metadata operativa, no una
+// unión cerrada que el dominio necesite validar.
+model Asset {
+  id        String    @id @default(cuid())
+  kind      AssetKind
+  url       String
+  width     Int?
+  height    Int?
+  altText   String
+  provider  String
+  createdAt DateTime  @default(now())
+
+  @@map("assets")
+}

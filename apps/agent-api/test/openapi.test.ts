@@ -44,6 +44,8 @@ const EXPECTED_ROUTES: Record<string, string[]> = {
   "/pages/{id}/publish": ["post"],
   "/pages/{id}/unpublish": ["post"],
   "/pages/{id}/preview": ["post"],
+  "/media/upload-url": ["post"],
+  "/media/assets": ["get", "post"],
 };
 
 describe("openapi.json generado", () => {

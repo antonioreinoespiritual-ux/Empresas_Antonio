@@ -1,4 +1,4 @@
-import { parsePageContent, type LandingPageContent, type Page } from "@repo/core/domain";
+import { collectAssetIds, parsePageContent, type Asset, type LandingPageContent, type Page } from "@repo/core/domain";
 import { getTheme } from "@repo/ui/themes";
 import { LandingRenderer } from "@repo/ui/blocks";
 import { CompositionRenderer } from "@repo/ui/composition";
@@ -22,7 +22,12 @@ export async function LandingPageView({ page }: { page: Page }) {
   if ("version" in content) {
     const offer = await commerce.offers.findById(page.offerId);
     const theme = getTheme(offer?.themeId ?? "premium-light");
-    return <CompositionRenderer composition={content} theme={theme} checkoutHref={checkoutHref} />;
+    // Fase 5 (§7): resuelve todos los assetId referenciados en un solo
+    // roundtrip antes de renderizar — CompositionRenderer nunca hace I/O.
+    const assetIds = collectAssetIds(content);
+    const assetRows = assetIds.length > 0 ? await commerce.assets.findByIds(assetIds) : [];
+    const assets: Record<string, Asset> = Object.fromEntries(assetRows.map((asset) => [asset.id, asset]));
+    return <CompositionRenderer composition={content} theme={theme} checkoutHref={checkoutHref} assets={assets} />;
   }
 
   return (

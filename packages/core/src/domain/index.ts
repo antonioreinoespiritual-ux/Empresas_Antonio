@@ -15,6 +15,8 @@ export * from "./content/composition";
 export * from "./content/block-operations";
 export * from "./content/block-type-catalog";
 export * from "./content/theme-id";
+export * from "./content/media-asset.entity";
+export * from "./content/media-content-type";
 export * from "./shared/domain-error";
 export * from "./agent-access/api-client.entity";
 export * from "./agent-access/api-key.entity";

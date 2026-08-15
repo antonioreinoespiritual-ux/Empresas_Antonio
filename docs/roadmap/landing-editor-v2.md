@@ -458,24 +458,23 @@ Por instrucción tuya, señalo cada decisión estructural encontrada durante
 el diseño. No avanzo ninguna fase que dependa de una de estas sin tu
 respuesta:
 
-- **P-1 — Profundidad máxima del árbol**: ¿cuántos niveles de anidamiento
-  permitimos (`section > row > row > ...`)? Recomiendo un límite fijo bajo
-  (p. ej. 4 niveles) validado por Zod — suficiente para toda composición
-  razonable, y evita recursión no acotada en el renderer/CAS. Necesito tu
-  ok sobre el número o el criterio.
-- **P-2 — Proveedor de storage de media**: no asumido en el diseño. Candidatos
-  razonables dado el stack actual (Vercel + Supabase): **Vercel Blob**
-  (mismo proveedor de hosting, integración más simple) vs. **Supabase
-  Storage** (mismo proyecto donde ya vive la base, un solo panel). Es una
-  decisión de costo/operación tuya, no técnica pura.
+- **P-1 — Profundidad máxima del árbol** — ✅ resuelta: 4 niveles
+  (`section > row > row(inner) > elemento`), validado por el propio schema
+  de Zod (no un chequeo manual aparte). Ver Fase 1.
+- **P-2 — Proveedor de storage de media** — ✅ resuelta: **Supabase
+  Storage**. Antonio delegó la elección técnica; se prefirió sobre Vercel
+  Blob porque el proyecto Supabase ya existente (`empresas-antonio`, mismo
+  donde vive Postgres en producción — confirmado vía ADR-015) significa
+  cero cuenta/proveedor nuevo, solo un bucket dentro de un proyecto que ya
+  existe. Ver Fase 5.
 - **P-3 — Alcance del "modo código"**: ¿alcanza con lectura/escritura
   directa del JSON de Composition (mi recomendación, cero riesgo nuevo), o
   querés además el evaluador de expresiones condicionales (§12, alcance
   mayor, todavía sin ejecución de código real pero más superficie a
-  diseñar/probar)? Puede diferirse sin bloquear el resto.
-- **P-4 — `write:media` como scope separado de `write:pages`**: ¿confirmás
-  esa separación, o preferís que `write:pages` alcance para todo
-  (más simple, menos granular)?
+  diseñar/probar)? Puede diferirse sin bloquear el resto — sigue sin
+  resolver, no bloqueó Fase 5.
+- **P-4 — `write:media` como scope separado de `write:pages`** — ✅
+  resuelta: separado, confirmado por Antonio. Ver Fase 5.
 - **P-5 — Checkout/Thank-you fuera de alcance**: confirmo que esta
   evolución es solo para Pages `kind: LANDING`. Si querés que
   Checkout/Thank-you también ganen composición libre en algún momento, es
@@ -779,28 +778,111 @@ solo porque el propio schema de dominio no permite un 4º nivel de fila),
 - **Requiere de mí**: nada — P-3 (evaluador de expresiones) sigue diferida,
   no la pidió nadie en esta fase.
 
-### Fase 5 — Subsistema de medios
-- **Objetivo**: subir, listar y referenciar imágenes/video reales.
-- **Toca**: `prisma/schema.prisma` (nuevo `Asset`), nuevo puerto
-  `MediaStorage` + adaptador, nuevas rutas (`/media/upload-url`,
-  `/media/assets`) en agent-api y en `apps/admin`, nodos `image`/`video`/`gallery`
-  conectados de verdad (antes solo existían como schema).
-- **Depende de**: resolver P-2 (proveedor) y P-4 (scope `write:media`).
-- **Migraciones**: nueva tabla `Asset` — aditiva, sin tocar tablas
-  existentes; grants nuevos en `agent_api_role` siguiendo el mismo
-  criterio least-privilege ya documentado (`create_agent_api_role.sql`).
-- **Riesgos**: nuevo proveedor externo = nuevo punto de fallo/costo — el
-  upload debe ser resiliente a que el registro del `Asset` falle después
-  de subir el binario (huérfano en storage, aceptable) vs. que el
-  `Asset` referencie una URL que nunca se subió (peor, debe evitarse con
-  el flujo de dos pasos ya descrito en §7).
-- **Pruebas**: integración real contra el proveedor elegido (no mock) para
-  el flujo completo subir→registrar→referenciar→renderizar.
-- **Gate de cierre**: una imagen subida por un agente aparece en la
-  landing pública con `next/image` optimizado.
-- **Requiere de mí**: elegir proveedor (P-2), confirmar P-4, y (fuera de
-  código) crear la cuenta/bucket real si el proveedor lo requiere — mismo
-  tipo de paso "exclusivo de Antonio" que Edge Config en el plan anterior.
+### Fase 5 — Subsistema de medios — ✅ CERRADA EN CÓDIGO (2026-08-15), pendiente de aprovisionamiento real por Antonio
+
+**Decisiones resueltas** (P-2, P-4 — ver §21): **Supabase Storage** (mismo
+proyecto donde ya vive Postgres en producción, confirmado vía ADR-015 — cero
+cuenta/proveedor nuevo, a diferencia de Vercel Blob) y **`write:media` como
+scope separado** de `write:pages`.
+
+**Entregado**:
+- `prisma/schema.prisma`: nuevo `model Asset` (`kind`, `url`, `width?`,
+  `height?`, `altText`, `provider`, `createdAt`) — aditivo, sin FK a Offer
+  (biblioteca compartida), migración `20260815094616_add_asset_table`.
+- Dominio: `Asset`/`AssetKind` (`domain/content/media-asset.entity.ts`),
+  `extensionForContentType` — lista cerrada de content-type→extensión por
+  kind (`domain/content/media-content-type.ts`), `collectAssetIds` — recorre
+  el árbol de una Composition juntando todo `assetId` referenciado
+  (`image`, `video` con `source.kind === "asset"` + `posterAssetId`,
+  `gallery`) en cualquier profundidad, para resolverlos en un solo
+  roundtrip.
+- Aplicación: puertos `AssetRepository` y `MediaStorage` (hexagonal, mismo
+  patrón que `PaymentProvider`); casos de uso `createMediaUploadUrl` (genera
+  un path aleatorio server-side — nunca uno que mande el cliente — y pide
+  la URL firmada) y `registerAsset` (computa `url` desde `path` vía
+  `MediaStorage.publicUrlFor`, **nunca un valor que mande el cliente** —
+  cierra el mismo tipo de vector que `safeLinkUrlSchema` ya cierra dentro
+  de Composition). Ninguno de los dos requiere `Idempotency-Key` (mismo
+  criterio que `POST /pages/:id/preview`, F5 del Agent Access Layer: un
+  duplicado no es dañino, ver §7 riesgos).
+- Infraestructura: `PrismaAssetRepository`; `SupabaseStorageMediaAdapter`
+  (`@supabase/supabase-js`, `createSignedUploadUrl`/`getPublicUrl`).
+- Agent API (scope `write:media` nuevo, además de `read` para listar):
+  `POST /media/upload-url` (primer paso — URL firmada), `POST /media/assets`
+  (segundo paso — registra tras subir, valida el `path` contra el shape
+  exacto que genera `upload-url` como defensa en profundidad),
+  `GET /media/assets` (paginado). Documentadas en `openapi.ts` +
+  `components.schemas.Asset`.
+- `apps/admin`: panel `/media` mínimo (F5, no el editor visual de F6) —
+  grid de Assets + formulario de subida (`upload-form.tsx`: pide la URL
+  firmada, hace `PUT` directo al storage desde el navegador, registra el
+  Asset; lee `width`/`height` reales de imágenes client-side, video se
+  registra sin dimensiones).
+- Renderer (`packages/ui/src/composition`): `assets: AssetMap` enhebrado
+  por `CompositionRenderer → SectionNode → RowNode → ElementDispatch` hacia
+  `ImageNode`/`VideoNode`/`GalleryNode`, que ahora resuelven el `assetId`
+  real vía `next/image`/`<video>` — el placeholder "pendiente Fase 5" queda
+  solo para un `assetId` que no resuelve (Asset borrado, o entorno sin el
+  bucket configurado). `apps/web/next.config.mjs` y `apps/admin/next.config.mjs`
+  allow-listan el host remoto vía `MEDIA_PUBLIC_HOST`.
+- `landing-page-view.tsx`: usa `collectAssetIds` + `assets.findByIds` para
+  resolver todo antes de renderizar — `CompositionRenderer` nunca hace I/O.
+- `create_agent_api_role.sql`: grant nuevo `SELECT, INSERT` sobre `assets`
+  (sin `UPDATE`/`DELETE` — un Asset es inmutable una vez registrado).
+
+**Verificado**:
+- `pnpm run boundaries`, `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r build`
+  → verde en los 7 workspaces (incluye el build de Next de los 3 apps con
+  la nueva ruta `/media` de `apps/admin` en el output).
+- `packages/core`: **181/181 tests** (175 previos + 6 nuevos: 2 de
+  `collectAssetIds`, 4 de `createMediaUploadUrl`/`registerAsset` con fakes
+  en memoria — validación de content-type, generación de path, y que `url`
+  se computa server-side y nunca desde un valor suelto del caller).
+- `apps/agent-api`: 11/11 — `openapi.test.ts` sigue validando el documento
+  contra el meta-schema oficial con las 3 rutas de `/media` incluidas.
+- **Smoke HTTP real de punta a punta**, con env vars de Supabase Storage
+  apuntando a un project ref inexistente a propósito (para separar qué se
+  puede verificar sin el bucket real de Antonio de qué no):
+  - `POST /media/upload-url` con `contentType` no soportado → `400` antes
+    de tocar la red; con un scope sin `write:media` → `403 missing_scope`;
+    con `contentType` válido → alcanza el código real y falla con `500`
+    (`fetch failed` contra el project ref falso, log confirmado) — **la
+    plumbing completa está probada hasta el borde exacto de lo que
+    requiere el bucket real**.
+  - `POST /media/assets` → **funciona de punta a punta sin red real**
+    (`publicUrlFor` es cómputo local, no HTTP): registra un Asset, calcula
+    su `url` pública, lo persiste, lo devuelve; un `path` con forma
+    inválida (`../../etc/passwd`) se rechaza con `400`; `GET /media/assets`
+    lo lista.
+  - Un agente crea una Page `composition-1` con un nodo `image` referenciando
+    ese Asset real, publica, y `apps/web` sirve `200` con un `<img>` real
+    generado por `next/image` (`srcSet`/`width`/`height`/`alt` correctos,
+    proxied vía `/_next/image` con el host de `MEDIA_PUBLIC_HOST`
+    allow-listado) — el gate de cierre del plan, cumplido de punta a punta
+    salvo el único tramo que exige el bucket real.
+- **No verificado en esta sesión** (requiere el bucket real, ver abajo):
+  la llamada en vivo a `createSignedUploadUrl` contra un proyecto Supabase
+  real, y por lo tanto el flujo completo `PUT` del binario vía el panel
+  `/media`.
+
+**Requiere de Antonio antes de que esto funcione en producción**:
+1. Crear un bucket **público** en el proyecto Supabase real (`empresas-antonio`)
+   — nombre sugerido `landing-media`, sin objeción técnica a otro nombre.
+2. Configurar en cada entorno de Vercel que lo necesite
+   (`apps/agent-api`, `apps/admin` para subir; `apps/web`+`apps/admin` para
+   servir) las env vars: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+   (secreta — nunca en git), `MEDIA_BUCKET` (el nombre del bucket), y
+   `MEDIA_PUBLIC_HOST` (el host público de Storage de ese proyecto, para
+   que `next/image` lo allow-liste).
+3. Ejecutar contra la base real el bloque nuevo de
+   `prisma/agent-access-layer/create_agent_api_role.sql` (`GRANT SELECT,
+   INSERT ON "assets" TO agent_api_role`) y correr `pnpm prisma:deploy`
+   para aplicar la migración de `Asset` — mismo procedimiento manual ya
+   usado para toda migración/grant anterior de este plan.
+4. Sin scope `write:media` ninguna ApiKey existente puede subir medios
+   todavía (F1-F5 nunca lo emitieron) — reemitir con
+   `--scopes ...,write:media` las que lo necesiten, igual que se hizo con
+   `write`/`publish:pages` en su momento.
 
 ### Fase 6 — Editor visual humano (la fase de mayor esfuerzo)
 - **Objetivo**: `apps/admin` gana una experiencia real para componer

@@ -145,6 +145,21 @@ const PAGE_SCHEMA = {
   },
 };
 
+const ASSET_SCHEMA = {
+  type: "object",
+  required: ["id", "kind", "url", "width", "height", "altText", "provider", "createdAt"],
+  properties: {
+    id: { type: "string" },
+    kind: { type: "string", enum: ["IMAGE", "VIDEO"] },
+    url: { type: "string", format: "uri" },
+    width: { oneOf: [{ type: "null" }, { type: "integer" }] },
+    height: { oneOf: [{ type: "null" }, { type: "integer" }] },
+    altText: { type: "string" },
+    provider: { type: "string" },
+    createdAt: { type: "string", format: "date-time" },
+  },
+};
+
 const BLOCK_TYPE_ENTRY_SCHEMA = {
   type: "object",
   required: ["type", "fields"],
@@ -222,6 +237,7 @@ export function buildOpenApiDocument(baseUrl: string) {
         Price: PRICE_SCHEMA,
         Page: PAGE_SCHEMA,
         LandingBlock: toJsonSchema(landingBlockSchema),
+        Asset: ASSET_SCHEMA,
         CompositionNode: toJsonSchema(compositionNodeSchema),
         RateLimitInfo: RATE_LIMIT_INFO_SCHEMA,
       },
@@ -687,6 +703,93 @@ export function buildOpenApiDocument(baseUrl: string) {
             "401": RESPONSES.Unauthorized,
             "403": RESPONSES.Forbidden,
             "404": RESPONSES.NotFound,
+            "429": RESPONSES.RateLimited,
+            "503": RESPONSES.KillSwitch,
+          },
+        }),
+      },
+      "/media/upload-url": {
+        post: bearerSecured({
+          summary:
+            "Primer paso del flujo de subida de medios (scope write:media, ARCH-LANDING-EDITOR-02 Fase 5): devuelve una URL firmada para subir el binario directo al storage. Sin Idempotency-Key — pedir dos URLs firmadas no es dañino.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["kind", "contentType"],
+                  properties: {
+                    kind: { type: "string", enum: ["IMAGE", "VIDEO"] },
+                    contentType: { type: "string", description: "Debe estar en la lista cerrada de content-types soportados para ese kind." },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "URL de subida emitida.",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["uploadUrl", "path", "expiresAt"],
+                    properties: {
+                      uploadUrl: { type: "string", format: "uri", description: "Hacer PUT del binario acá directo, con el mismo Content-Type declarado." },
+                      path: { type: "string", description: "Pasar tal cual a POST /media/assets después de subir el binario." },
+                      expiresAt: { type: "string", format: "date-time" },
+                    },
+                  },
+                },
+              },
+            },
+            "400": RESPONSES.BadRequest,
+            "401": RESPONSES.Unauthorized,
+            "403": RESPONSES.Forbidden,
+            "429": RESPONSES.RateLimited,
+            "503": RESPONSES.KillSwitch,
+          },
+        }),
+      },
+      "/media/assets": {
+        get: bearerSecured({
+          summary: "Lista la biblioteca de Assets (scope read) — compartida entre todas las Offers.",
+          parameters: [CURSOR_PARAM, LIMIT_PARAM],
+          responses: {
+            "200": { description: "OK.", content: { "application/json": { schema: paginated("assets", ASSET_SCHEMA) } } },
+            "401": RESPONSES.Unauthorized,
+            "403": RESPONSES.Forbidden,
+            "429": RESPONSES.RateLimited,
+            "503": RESPONSES.KillSwitch,
+          },
+        }),
+        post: bearerSecured({
+          summary:
+            "Segundo paso del flujo de subida (scope write:media): registra el Asset ya subido al storage. `url` la computa el servidor a partir de `path`, nunca un valor que mande el cliente. Sin Idempotency-Key — un doble registro no es dañino.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["kind", "path", "altText"],
+                  properties: {
+                    kind: { type: "string", enum: ["IMAGE", "VIDEO"] },
+                    path: { type: "string", description: "El `path` devuelto por POST /media/upload-url." },
+                    altText: { type: "string", minLength: 1 },
+                    width: { type: "integer", minimum: 1 },
+                    height: { type: "integer", minimum: 1 },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "Asset registrado.", content: { "application/json": { schema: { type: "object", required: ["asset"], properties: { asset: ASSET_SCHEMA } } } } },
+            "400": RESPONSES.BadRequest,
+            "401": RESPONSES.Unauthorized,
+            "403": RESPONSES.Forbidden,
             "429": RESPONSES.RateLimited,
             "503": RESPONSES.KillSwitch,
           },

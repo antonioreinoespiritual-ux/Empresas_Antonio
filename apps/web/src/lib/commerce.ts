@@ -1,5 +1,6 @@
 import {
   NodeApiKeyHasher,
+  PrismaAssetRepository,
   PrismaCustomerRepository,
   PrismaOfferRepository,
   PrismaCheckoutSessionRepository,
@@ -48,4 +49,6 @@ export const commerce = {
   previewTokens: new PrismaPreviewTokenRepository(),
   previewTokenHasher: new NodeApiKeyHasher(),
   providers,
+  // Fase 5 del editor de landings v2 (§7) — biblioteca de medios.
+  assets: new PrismaAssetRepository(),
 };
