@@ -653,7 +653,75 @@ solo porque el propio schema de dominio no permite un 4º nivel de fila),
   Page se inserte a mano en la DB para probar, sin endpoint todavía).
 - **Requiere de mí**: nada nuevo, sigue P-1 ya aprobado.
 
-### Fase 3 — Escritura vía Agent API (agentes primero, como ya se hizo con bloques)
+### Fase 3 — Escritura vía Agent API (agentes primero, como ya se hizo con bloques) — ✅ CERRADA (2026-08-14)
+
+**Entregado**:
+- `packages/core/src/domain/content/composition/tree-operations.ts`:
+  `addNodeToComposition`, `updateNodeInComposition`,
+  `removeNodeFromComposition`, `reorderChildrenInComposition` — puras, sin
+  I/O, mismo criterio que `block-operations.ts` pero recorriendo un árbol
+  por `id` en cualquier profundidad (no un array plano). La validación de
+  profundidad/tipo **no es un chequeo escrito a mano**: cada función clona,
+  muta el clon como JS plano, y siempre re-valida el árbol completo con
+  `compositionContentSchema` antes de devolverlo — si el resultado viola
+  P-1 (profundidad máxima) o cualquier otra regla del schema, el propio
+  `compositionContentSchema.parse` lo rechaza.
+- `COMPOSITION_ROOT_ID = "root"`: id sentinel para operar directo sobre
+  `composition.root` (agregar/reordenar sections de nivel más alto) con la
+  misma función genérica que opera sobre cualquier nodo interno — sin una
+  ruta/función separada solo para sections.
+- Agent API (`apps/agent-api`), mismo patrón exacto que blocks/reorder de
+  F4 del Agent Access Layer (auth + scope `write:pages` + `allowedOfferIds`
+  + CAS vía `If-Match` + `Idempotency-Key` + auditoría atómica, sin
+  infraestructura nueva):
+  - `POST /pages/:id/nodes` — agrega un nodo (`parentNodeId` omitido =
+    section nueva al nivel más alto).
+  - `PATCH /pages/:id/nodes/:nodeId` — patch de `content`/`style` (nunca
+    `type`/`id`/`children`, rechazado en el body con `.strict()` manual
+    antes de tocar dominio).
+  - `DELETE /pages/:id/nodes/:nodeId`.
+  - `POST /pages/:id/nodes/reorder` — reordena los hijos directos de
+    cualquier contenedor.
+  - **Ninguna ruta nueva para crear la Page inicial**: `POST /pages` (F4)
+    ya acepta un `content` en formato `composition-1` desde Fase 1 sin
+    ningún cambio — confirmado con el smoke test.
+  - `apps/agent-api/src/lib/agent-composition.ts`: `loadCompositionPageForAgentWrite`
+    (envuelve `loadLandingPageForAgentWrite` de F4 + verifica que el
+    content ya esté en formato `composition-1`, 400 `invalid_content_format`
+    si no).
+  - `openapi.ts`: `PAGE_CONTENT_SCHEMA` ahora incluye Composition en su
+    `oneOf`, nuevo `components.schemas.CompositionNode`, y los 3 paths
+    nuevos documentados.
+
+**Verificado**:
+- `pnpm run boundaries`, `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r build`
+  → verde en los 7 workspaces.
+- `packages/core`: **175/175 tests** (160 previos + 15 nuevos de
+  `composition-tree-operations.test.ts`, cero regresión), incluidos casos
+  de rechazo explícitos (agregar una row dentro de una row ya anidada,
+  parentId inexistente, parentId que no es contenedor, id duplicado).
+- `apps/agent-api`: 11/11 tests — `openapi.test.ts` sigue validando el
+  documento contra el meta-schema oficial de OpenAPI 3.1 con las 3 rutas
+  nuevas incluidas, y el chequeo de "rutas documentadas == rutas reales en
+  disco" actualizado.
+- **Smoke test HTTP real de punta a punta** contra una instancia local en
+  vivo (`apps/agent-api` + Postgres real + una ApiKey real emitida por
+  `manage-agent-clients.mjs`): `whoami` → `POST /pages` con `content`
+  `composition-1` (201, confirma que F4 ya soporta esto sin cambios) →
+  `POST .../nodes` agregando una section al root (sin `parentNodeId`) →
+  `POST .../nodes` agregando un nodo dentro de un contenedor específico →
+  `POST .../nodes` agregando una fila anidada (nivel 3, permitido) →
+  **`POST .../nodes` agregando una fila dentro de esa fila ya anidada
+  (nivel 5) → `400` real, con el `ZodError` completo en el body** (la
+  garantía de profundidad de P-1 confirmada end-to-end, no solo en tests
+  unitarios) → `PATCH .../nodes/:id` actualizando `style` → intento de
+  patch con `type` → `400 invalid_body` rechazado → `POST .../nodes/reorder`
+  → `DELETE .../nodes/:id` del único hijo de un contenedor → **`400`
+  correcto** (`.min(1)` de children lo impide — un contenedor nunca queda
+  vacío) → `publish` → verificado sirviendo la Page real por HTTP en
+  `apps/web` (`200`, contenido y `href` reales presentes en el HTML).
+
+
 - **Objetivo**: un agente puede crear una Page en formato Composition y
   operarla nodo por nodo — primera vez que existe una vía real de
   escritura.
