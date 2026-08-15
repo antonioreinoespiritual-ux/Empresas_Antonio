@@ -2,6 +2,7 @@ import type { ElementNode, InnerRowNode, RowNode as RowNodeContent } from "@repo
 import type { Theme } from "../themes/types";
 import { ElementDispatch } from "./ElementDispatch";
 import { ResponsiveStyleTag, stylePropsToBaseCss } from "./style-runtime";
+import type { AssetMap } from "./types";
 
 // Cada hijo directo de una row es, conceptualmente, una columna de un grid
 // de 12 (ARCH-LANDING-EDITOR-02 §8) — sin columnSpan explícito, ocupa el
@@ -17,6 +18,7 @@ interface RowNodeProps {
   node: RowNodeContent | InnerRowNode;
   theme: Theme;
   checkoutHref: string;
+  assets: AssetMap;
 }
 
 /**
@@ -25,7 +27,7 @@ interface RowNodeProps {
  * de dominio no permite una 3ª row (profundidad máxima, P-1). No hace falta
  * un contador de profundidad separado acá.
  */
-export function RowNode({ node, theme, checkoutHref }: RowNodeProps) {
+export function RowNode({ node, theme, checkoutHref, assets }: RowNodeProps) {
   return (
     <div className="grid grid-cols-12 gap-6" data-node-id={node.id} style={stylePropsToBaseCss(node.style)}>
       <ResponsiveStyleTag nodeId={node.id} style={node.style} />
@@ -34,9 +36,9 @@ export function RowNode({ node, theme, checkoutHref }: RowNodeProps) {
         return (
           <div key={child.id} style={{ gridColumn: `span ${span} / span ${span}` }}>
             {child.type === "row" ? (
-              <RowNode node={child} theme={theme} checkoutHref={checkoutHref} />
+              <RowNode node={child} theme={theme} checkoutHref={checkoutHref} assets={assets} />
             ) : (
-              <ElementDispatch node={child} theme={theme} checkoutHref={checkoutHref} />
+              <ElementDispatch node={child} theme={theme} checkoutHref={checkoutHref} assets={assets} />
             )}
           </div>
         );

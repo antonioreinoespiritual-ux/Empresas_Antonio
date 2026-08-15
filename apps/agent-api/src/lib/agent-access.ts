@@ -4,6 +4,7 @@ import {
   PrismaAgentAuditLogRepository,
   PrismaApiClientRepository,
   PrismaApiKeyRepository,
+  PrismaAssetRepository,
   PrismaIdempotencyRecordRepository,
   PrismaOfferRepository,
   PrismaPageRepository,
@@ -49,4 +50,9 @@ export const agentAccess = {
   // F5 — publicación y preview. agent_api_role tiene SELECT/INSERT/UPDATE
   // sobre "preview_tokens" desde F0 (anticipando esta fase, igual que pages).
   previewTokens: new PrismaPreviewTokenRepository(),
+  // Fase 5 del editor de landings v2 (ARCH-LANDING-EDITOR-02 §7) — biblioteca
+  // de medios. Solo el repositorio (envuelve `prisma`, sin credenciales
+  // propias); el adaptador de storage se instancia aparte y perezosamente
+  // en media-storage.ts, ver ese archivo para el porqué.
+  assets: new PrismaAssetRepository(),
 };

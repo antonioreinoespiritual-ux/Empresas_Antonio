@@ -83,6 +83,15 @@ GRANT SELECT, INSERT, UPDATE ON "preview_tokens" TO agent_api_role;
 -- registro de idempotencia (hallado en producción real, F9).
 GRANT SELECT, INSERT, UPDATE ON "idempotency_records" TO agent_api_role;
 
+-- Biblioteca de medios (editor de landings v2, Fase 5): un Asset se crea
+-- una sola vez (INSERT) tras subir el binario al storage y después solo se
+-- lee (SELECT), nunca se edita ni se borra desde acá — sin UPDATE/DELETE,
+-- mismo criterio least-privilege que el resto de este script. El SELECT es
+-- necesario tanto para servir GET /media/assets como por el mismo motivo ya
+-- documentado arriba para agent_audit_logs: Prisma hace RETURNING en el
+-- INSERT y Postgres exige SELECT sobre esas columnas para poder devolverlas.
+GRANT SELECT, INSERT ON "assets" TO agent_api_role;
+
 -- 4) Nada de esto usa secuencias/funciones/rutinas propias (los ids son
 --    cuid() generados en la aplicación, no seriales de Postgres) ni Row
 --    Level Security (el acceso es por protocolo Postgres directo con este

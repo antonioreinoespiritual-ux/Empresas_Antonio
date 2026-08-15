@@ -9,19 +9,30 @@ import { LegacyBlockNode } from "./LegacyBlockNode";
 import { RichTextNode } from "./RichTextNode";
 import { ShapeNode } from "./ShapeNode";
 import { SpacerNode } from "./SpacerNode";
+import type { AssetMap } from "./types";
 import { VideoNode } from "./VideoNode";
 
 /** Un único nodo elemento (hoja) -> JSX. Reusado tanto por RowNode como por InnerRowNode. */
-export function ElementDispatch({ node, theme, checkoutHref }: { node: ElementNode; theme: Theme; checkoutHref: string }) {
+export function ElementDispatch({
+  node,
+  theme,
+  checkoutHref,
+  assets,
+}: {
+  node: ElementNode;
+  theme: Theme;
+  checkoutHref: string;
+  assets: AssetMap;
+}) {
   switch (node.type) {
     case "richText":
       return <RichTextNode content={node} />;
     case "image":
-      return <ImageNode content={node} />;
+      return <ImageNode content={node} assets={assets} />;
     case "video":
-      return <VideoNode content={node} />;
+      return <VideoNode content={node} assets={assets} />;
     case "gallery":
-      return <GalleryNode content={node} />;
+      return <GalleryNode content={node} assets={assets} />;
     case "icon":
       return <IconNode content={node} />;
     case "divider":

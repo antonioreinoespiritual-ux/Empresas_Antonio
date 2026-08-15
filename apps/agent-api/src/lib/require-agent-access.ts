@@ -12,6 +12,8 @@ export const READ_SCOPE = "read";
 export const WRITE_SCOPE = "write";
 /** F5 — publicar/despublicar/emitir preview. Deliberadamente distinto de "write": una key puede editar contenido sin poder publicarlo. */
 export const PUBLISH_SCOPE = "publish:pages";
+/** Fase 5 del editor de landings v2 (P-4, aprobada: scope separado) — subir/registrar Assets es un recurso con costo de storage real, distinto de editar el JSON de una Page. */
+export const WRITE_MEDIA_SCOPE = "write:media";
 
 interface RequireAgentAccessParams {
   request: Request;
@@ -147,6 +149,16 @@ export function requireAgentPublish(params: {
   offerId?: string;
 }): Promise<RequireAgentAccessResult> {
   return requireAgentAccess({ ...params, scope: PUBLISH_SCOPE, isWrite: true });
+}
+
+export function requireAgentWriteMedia(params: {
+  request: Request;
+  method: string;
+  resourceType: string;
+  routeKey: string;
+  rateLimit: { limit: number; windowMs: number };
+}): Promise<RequireAgentAccessResult> {
+  return requireAgentAccess({ ...params, scope: WRITE_MEDIA_SCOPE, isWrite: true });
 }
 
 /** Respuesta uniforme (headers de F1/F2) para las rutas de apps/agent-api. */
