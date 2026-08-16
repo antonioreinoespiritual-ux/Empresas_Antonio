@@ -11,3 +11,4 @@ export * from "./Badge";
 export * from "./VideoFrame";
 export * from "./FormField";
 export * from "./Divider";
+export * from "./iframe-sandbox";

@@ -1059,21 +1059,80 @@ nuevos), `apps/agent-api` **11/11** sin cambios (ninguna ruta se tocó).
 **Requiere de Antonio**: nada — Fase 7 no agrega tablas, env vars ni
 servicios nuevos.
 
-### Fase 8 — Hardening de seguridad (deuda preexistente)
-- **Objetivo**: cerrar la brecha real encontrada en el diagnóstico (§1.6),
-  no introducida por este plan pero visible mientras se trabaja esta área.
-- **Toca**: sanitizador real sobre los 2 sitios `dangerouslySetInnerHTML`
-  existentes, CSP básica en `apps/web`/`apps/admin`, `sandbox=` en los 4
-  `<iframe>` existentes.
-- **Depende de**: nada de lo anterior — puede adelantarse o correr en
-  paralelo si preferís priorizarla antes.
-- **Riesgos**: una CSP mal calibrada puede romper el `<iframe>` de VSL/PayPal
-  — requiere probar contra checkout real antes de desplegar.
-- **Pruebas**: verificación manual de que checkout/VSL/preview siguen
-  funcionando con CSP activa.
-- **Gate de cierre**: CSP activa en producción sin romper ningún flujo
-  existente, sanitizador activo sobre HTML legacy.
-- **Requiere de mí**: nada, salvo priorizar cuándo corre esta fase.
+### Fase 8 — Hardening de seguridad (deuda preexistente) — ✅ CERRADA (2026-08-15)
+
+**Entregado**:
+- `packages/ui/src/sanitize.ts` (`sanitizeRichTextHtml`, nueva dependencia
+  `sanitize-html` — la única del paquete): allowlist cerrada de tags de
+  prosa (encabezados, párrafos, listas, links, formato básico, `img`),
+  esquemas de URL restringidos a `http`/`https`/`mailto` (`data:` solo en
+  `img`, para pegar un base64 chico), `rel="noopener noreferrer"` forzado
+  en cualquier link. Usado en los 2 sitios reales (`RichTextBlock.tsx` de
+  bloques, `landing-page-view.tsx` de `bodyHtml` legacy) — el tercer
+  resultado de buscar `dangerouslySetInnerHTML` (`style-runtime.tsx`) no
+  cuenta: inyecta CSS generado desde tokens cerrados, nunca texto de
+  usuario, y ya tenía su propio comentario justificándolo desde antes.
+- `packages/ui/src/primitives/iframe-sandbox.ts` (`VIDEO_IFRAME_SANDBOX`):
+  una sola constante compartida por los 4 `<iframe>` (`VideoFrame.tsx`
+  — reusado por `VslBlock` y `VideoNode` — más los 2 iframes directos de
+  `landing-page-view.tsx` y `gracias/[checkoutSessionId]/page.tsx`).
+  `allow-scripts allow-same-origin allow-presentation allow-popups` — sin
+  token de fullscreen: **verificado contra Chromium real que
+  `allow-fullscreen` no existe como flag de `sandbox`** (el navegador lo
+  descarta con un warning en consola); fullscreen ya lo habilita el
+  atributo `allowFullScreen` de cada iframe, independiente de `sandbox`.
+  Encontrado y corregido durante la verificación de abajo, no en el
+  diseño inicial.
+- `apps/web/next.config.mjs` y `apps/admin/next.config.mjs`: CSP vía
+  `headers()`, más `X-Content-Type-Options`/`X-Frame-Options`/
+  `Referrer-Policy`. `frame-src`/`img-src` amplios a propósito (`https:`)
+  en vez de una allow-list fija — el VSL es una URL que el admin tipea
+  libre (cualquier proveedor), y las imágenes de Composition vienen de
+  `MEDIA_PUBLIC_HOST` (Supabase Storage, dinámico); restringir a
+  proveedores anticipados rompería el primer caso no previsto.
+  `apps/web` suma `checkout.wompi.co` a `script-src`/`connect-src` (el
+  único origen externo real que carga: el widget de pago) — PayPal no
+  necesita nada, su flujo es un redirect de página completa a
+  `approveUrl`, nunca un iframe/XHR embebido (confirmado leyendo
+  `checkout-form.tsx`, no documentación). `apps/admin` no tiene checkout
+  ni VSL, así que su `frame-src` es `'none'`. Ambas relajan `script-src`
+  or `connect-src` con `'unsafe-eval'`/`ws://localhost:*` solo en dev
+  (Next usa `eval` para Fast Refresh) — la CSP de producción no los
+  incluye.
+
+**Verificado**:
+- `pnpm run boundaries`/`typecheck`/`lint`/`build` verdes en los 7
+  workspaces.
+- **Playwright/Chromium real** contra ambas apps en modo producción
+  (`next start`, la CSP real de producción, no la relajada de dev):
+  - Una Page real con `bodyHtml` = `<p>Texto legítimo</p><script>...) +
+    `<img src=x onerror="...">` — el `<script>` desaparece del todo, el
+    `onerror` se elimina, `window.__xssFired` nunca se define. Confirmado
+    contra el HTML sanitizado real servido por `/[slug]`, no solo contra
+    la función en aislamiento.
+  - Un VSL real (`https://www.youtube.com/embed/...`) sirve con el
+    `<iframe sandbox="allow-scripts allow-same-origin allow-presentation
+    allow-popups">` esperado, sin ningún error de `sandbox` inválido en
+    consola (acá se encontró y corrigió el bug de `allow-fullscreen`) y
+    sin ningún "Refused to frame/connect/load" de CSP.
+  - `/login` (ambas apps), `/checkout/[offerId]` — cero mensajes de CSP en
+    consola del navegador.
+  - Crear un Product/Offer real vía Server Action en `apps/admin` bajo la
+    CSP de producción funciona sin cambios — confirma que `connect-src
+    'self'` no rompe el mecanismo de Server Actions de Next.js.
+- **Límite honesto de esta verificación**: no se pudo probar un checkout
+  real de Wompi/PayPal de punta a punta — este entorno no tiene
+  credenciales reales (`WOMPI_PUBLIC_KEY` vacía en `.env.example`). El
+  origen `checkout.wompi.co` en la CSP está calibrado contra el código
+  fuente del widget (`wompi-widget.ts`) y documentación pública de Wompi,
+  no contra una transacción real. Recomendado: un smoke test manual de un
+  checkout real de Wompi antes de confiar en esto al 100%, apenas haya
+  credenciales de sandbox/producción disponibles.
+
+**Requiere de Antonio**: nada de infraestructura — Fase 8 no agrega
+tablas, env vars ni servicios nuevos. Sí pendiente: **verificar un
+checkout real de Wompi** con la CSP activa la primera vez que se use con
+credenciales reales (ver límite de arriba).
 
 ### Fase 9 — Migración opcional + cierre
 - **Objetivo**: (solo si P-6 lo pide) herramienta de conversión no

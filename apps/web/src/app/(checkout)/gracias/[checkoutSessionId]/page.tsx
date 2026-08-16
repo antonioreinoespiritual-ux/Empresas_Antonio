@@ -1,5 +1,5 @@
 import { getTheme } from "@repo/ui/themes";
-import { ThemeProvider, Section, Container, Heading, Text } from "@repo/ui/primitives";
+import { ThemeProvider, Section, Container, Heading, Text, VIDEO_IFRAME_SANDBOX } from "@repo/ui/primitives";
 import { DEFAULT_THEME_ID } from "@repo/core/domain";
 import { commerce } from "@/lib/commerce";
 import { OrderStatus } from "./order-status";
@@ -43,6 +43,7 @@ export default async function ThankYouPage({ params }: { params: { checkoutSessi
                 title="Video"
                 allow="autoplay; encrypted-media; picture-in-picture"
                 allowFullScreen
+                sandbox={VIDEO_IFRAME_SANDBOX}
               />
             </div>
           )}

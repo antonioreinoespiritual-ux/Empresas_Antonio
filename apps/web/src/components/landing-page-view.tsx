@@ -2,6 +2,8 @@ import { collectAssetIds, parsePageContent, type Asset, type LandingPageContent,
 import { getTheme } from "@repo/ui/themes";
 import { LandingRenderer } from "@repo/ui/blocks";
 import { CompositionRenderer } from "@repo/ui/composition";
+import { sanitizeRichTextHtml } from "@repo/ui/sanitize";
+import { VIDEO_IFRAME_SANDBOX } from "@repo/ui/primitives";
 import { commerce } from "@/lib/commerce";
 
 // Extraído de (marketing)/[slug]/page.tsx para que /preview/[token] (F5)
@@ -43,12 +45,13 @@ export async function LandingPageView({ page }: { page: Page }) {
             title="Video"
             allow="autoplay; encrypted-media; picture-in-picture"
             allowFullScreen
+            sandbox={VIDEO_IFRAME_SANDBOX}
           />
         </div>
       )}
 
       {content.bodyHtml && (
-        <div className="prose mt-8 max-w-none" dangerouslySetInnerHTML={{ __html: content.bodyHtml }} />
+        <div className="prose mt-8 max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(content.bodyHtml) }} />
       )}
 
       <a className="mt-8 inline-block rounded bg-neutral-900 px-6 py-3 text-white" href={checkoutHref}>

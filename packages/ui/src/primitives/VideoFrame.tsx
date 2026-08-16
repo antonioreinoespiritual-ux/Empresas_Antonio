@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "../utils/cn";
+import { VIDEO_IFRAME_SANDBOX } from "./iframe-sandbox";
 
 export interface VideoFrameProps {
   embedUrl: string;
@@ -34,6 +35,7 @@ export function VideoFrame({ embedUrl, posterImageUrl, autoplay = false, classNa
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
           loading="lazy"
+          sandbox={VIDEO_IFRAME_SANDBOX}
         />
       ) : (
         <button

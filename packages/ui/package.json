@@ -8,6 +8,7 @@
     "./themes": "./src/themes/index.ts",
     "./blocks": "./src/blocks/index.ts",
     "./composition": "./src/composition/index.ts",
+    "./sanitize": "./src/sanitize.ts",
     "./tailwind-preset": "./tailwind-preset.cjs"
   },
   "scripts": {
@@ -15,7 +16,8 @@
     "lint": "eslint . --ext .ts,.tsx"
   },
   "dependencies": {
-    "@repo/core": "workspace:*"
+    "@repo/core": "workspace:*",
+    "sanitize-html": "^2.17.7"
   },
   "peerDependencies": {
     "next": "^14.2.15",
@@ -26,6 +28,7 @@
     "@repo/config": "workspace:*",
     "@tailwindcss/typography": "^0.5.15",
     "@types/react": "^18.3.11",
+    "@types/sanitize-html": "^2.16.1",
     "eslint": "^8.57.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.0.0",
